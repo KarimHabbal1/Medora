@@ -1,7 +1,7 @@
 # HealthNav AI – Clinical Reasoning Engine
 ## Branch: `llms/ragSystem/gpt-oss-120b`
 
-> **Experiment:** Replacing the closed-source GPT-4o generation model with a locally-served open-source model via Ollama. Embeddings remain on OpenAI to stay consistent with the existing ChromaDB index.
+> **Experiment:** Using `llama3.2` (3.2B, already downloaded) as the local generation engine via Ollama. This is the baseline OSS branch — the first test of replacing GPT-4o with a local model.
 
 ---
 
@@ -10,30 +10,38 @@
 | Component | `closedSourceModel` | `gpt-oss-120b` (this branch) |
 | :--- | :--- | :--- |
 | **Embeddings** | OpenAI `text-embedding-3-small` | OpenAI `text-embedding-3-small` (unchanged) |
-| **Generation** | OpenAI `gpt-4o` | Local OSS model via Ollama |
+| **Generation** | OpenAI `gpt-4o` | `llama3.2` via Ollama (local) |
 | **API calls** | Fully cloud | Embeddings cloud, generation local |
 | **Data privacy** | Symptoms sent to OpenAI | Symptoms stay on-device |
 | **Cost** | Per-token billing for generation | Free (local inference) |
 
 ---
 
+## Model Details
+
+| Property | Value |
+|---|---|
+| **Model** | `llama3.2` |
+| **Parameters** | 3.2 billion |
+| **Download size** | 2 GB (already downloaded) |
+| **Min RAM** | 8 GB |
+| **Served via** | Ollama at `http://localhost:11434/v1` |
+
+---
+
 ## Setup
 
-### Prerequisites
-- Python 3.8+
-- [Ollama](https://ollama.ai) installed and running
-- Your model pulled in Ollama:
-  ```bash
-  ollama pull gpt-oss-120b
-  ```
-- A `.env` file with:
-  ```
-  OPENAI_API_KEY=sk-...
+### Start Ollama (model already downloaded)
+```bash
+ollama serve
+```
 
-  # Ollama config (defaults shown)
-  OLLAMA_BASE_URL=http://localhost:11434/v1
-  OLLAMA_MODEL=gpt-oss-120b
-  ```
+### `.env` file
+```
+OPENAI_API_KEY=sk-...
+
+OLLAMA_MODEL=llama3.2
+```
 
 ### Install dependencies
 ```bash
@@ -54,7 +62,7 @@ graph LR
     User((User Input)) -->|symptom_rag_demo.py| E[RAG Triage Engine]
     D --> E
     OAI[OpenAI Embeddings] -->|query embedding| E
-    Ollama[Ollama OSS Model] -->|generation| E
+    Ollama[llama3.2 via Ollama] -->|generation| E
 ```
 
 ---
@@ -76,7 +84,7 @@ graph LR
    python symptom_indexer.py
    ```
 
-4. **Test Triage with OSS model**:
+4. **Run triage demo:**
    ```bash
    python symptom_rag_demo.py
    ```
@@ -85,10 +93,10 @@ graph LR
 
 ## What to Evaluate on This Branch
 
-- Does the OSS model follow the structured output format?
+- Does `llama3.2` follow the structured triage output format?
 - Does it stay grounded in retrieved chunks without hallucinating?
 - Does it correctly identify red flags and urgency levels?
-- How does response quality compare to GPT-4o on the same queries?
+- How does a 3.2B model compare to GPT-4o on the same queries?
 
 ---
 
