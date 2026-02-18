@@ -18,15 +18,6 @@ The system processes raw medical text into a searchable vector database through 
 3.  **Indexing**: Structured data is split into semantic chunks and embedded into a Vector Database (ChromaDB).
 4.  **Retrieval (RAG)**: The Triage Agent queries this database for relevant clinical rules to reason about user symptoms.
 
-```mermaid
-graph LR
-    A[TMT 2022 PDF] -->|ch2_extractor.py| B[Raw Symptoms (JSONL)]
-    B -->|symptom_structurer.py| C[Structured Knowledge (JSONL)]
-    C -->|symptom_indexer.py| D[ChromaDB Vector Store]
-    User((User Input)) -->|symptom_rag_demo.py| E[RAG Triage Engine]
-    D --> E
-```
-
 ---
 
 ## 📂 File Descriptions
