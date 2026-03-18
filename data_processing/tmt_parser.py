@@ -174,6 +174,8 @@ FONT_PUA_MAP: dict[str, dict[str, str]] = {
 
     # f44 — pulmonology body text font (airway disorders chapter)
     "f44": {
+        "\ue006": "-",  # hyphen in compound terms: "Self-monitoring", "Sodium-glucose",
+                        # "Maturity-onset", "Post-poliomyelitis"
         "\ue03c": "c",  # e.g. causes, certain, clinical, common
         "\ue042": "i",  # e.g. Airway, diverse, physiologic
         "\ue045": "l",  # e.g. pathophysiologic, clinical, Airflow
@@ -281,6 +283,7 @@ FONT_PUA_MAP: dict[str, dict[str, str]] = {
 
     # f134 — drug table font (partial lists of medications)
     "f134": {
+        "\ue009": "-",  # hyphen in table cells: "Chloride-Responsive", "CNS-mediated"
         "\ue021": "h",  # score=6, h leads — new
         "\ue028": "k",  # score=6, e/k/p/r tied — low-conf — new
         "\ue036": "h",  # e.g. this, have
@@ -304,6 +307,7 @@ FONT_PUA_MAP: dict[str, dict[str, str]] = {
     "f141": {
         "\ue01e": "a",   # e.g. recommendation (2nd a)
         "\ue021": "e",   # e.g. recommendation (re-)
+        "\ue024": "h",   # dropped letter in "therapy", "Months", "Other"
         "\ue025": "a",   # e.g. Dilation, curettage
         "\ue02b": "p",   # score=18, p leads — new
         "\ue02c": "r",   # score=18, r leads — new
@@ -329,6 +333,11 @@ FONT_PUA_MAP: dict[str, dict[str, str]] = {
 
     # f164 — kidney disease / renal body text font (ch.22, variant)
     "f164": {"\ue03b": "e"},  # e.g. some, patients, kidney, disease, experience
+
+    # f165 — acid-base / electrolyte body text font
+    "f165": {
+        "\ue003": "-",  # hyphen: e.g. "Acid-Base Disorders"
+    },
 
     # f174 — urology body text / heading font (ch.23)
     "f174": {
@@ -428,12 +437,14 @@ FONT_PUA_MAP: dict[str, dict[str, str]] = {
     # f64 — specialty body text font (later chapters, sparse usage)
     "f64": {
         "\ue015": "a",  # score=18, a leads
+        "\ue01b": "h",  # dropped letter: "treatment with" (treat-h-ment)
         "\ue024": "t",  # score=8, t leads
     },
 
-    # f67 — symbol / special character font (non-alphabetic markers)
-    # Note: all mappings are low-confidence (tied scores) — likely decorative
+    # f67 — symbol / special character font (parentheses encoding + decorative markers)
     "f67": {
+        "\ue005": "(",  # opening parenthesis encoding
+        "\ue006": ")",  # closing parenthesis encoding
         "\ue03f": "z",  # score=56 (all tied — low-conf; likely non-letter symbol)
         "\ue046": "z",  # score=221 (all tied — low-conf; likely non-letter symbol)
     },
@@ -442,6 +453,28 @@ FONT_PUA_MAP: dict[str, dict[str, str]] = {
     "f68": {
         "\ue027": "h",  # score=34, h leads
         "\ue02e": "p",  # score=8, p leads
+    },
+
+    # f71 — math formula font (inline equations and numeric expressions)
+    # Symbols verified from formula contexts (e.g. dose calculations, lab ranges)
+    "f71": {
+        "\ue000": "=",  # equals sign
+        "\ue001": "+",  # plus sign
+        "\ue002": "-",  # minus sign
+        "\ue003": "×",  # multiplication sign
+        "\ue004": "/",  # division / fraction bar
+        "\ue005": "(",  # opening parenthesis
+    },
+
+    # f161 — math formula font (variant, same symbol set as f71)
+    # Used in a different chapter's formula spans with identical PUA encoding
+    "f161": {
+        "\ue000": "=",  # equals sign
+        "\ue001": "+",  # plus sign
+        "\ue002": "-",  # minus sign
+        "\ue003": "×",  # multiplication sign
+        "\ue004": "/",  # division / fraction bar
+        "\ue005": "(",  # opening parenthesis
     },
 
     # f82 — symbol / icon font (rare occurrences)
@@ -459,9 +492,11 @@ FONT_PUA_MAP: dict[str, dict[str, str]] = {
         "\ue001": "z",  # score=2 (all tied — low-conf)
     },
 
-    # f86 — symbol / icon font (chapter-boundary markers or decorative)
+    # f86 — body text font (ligatures and chapter-boundary markers)
     "f86": {
-        "\ue000": "z",  # score=38 (all tied — low-conf)
+        "\ue000": "z",   # score=38 (all tied — low-conf)
+        "\ue01f": "fi",  # fi-ligature: e.g. "deficiencies"
+        "\ue038": "fl",  # fl-ligature: e.g. "influenza"
     },
 
     # f102 — ancillary table font (drug/dose tables)
@@ -506,6 +541,7 @@ FONT_PUA_MAP: dict[str, dict[str, str]] = {
         "\ue022": "z",  # score=14 (all tied — low-conf)
         "\ue023": "z",  # score=8  (all tied — low-conf)
         "\ue024": "l",  # score=22, l/r tied — low-conf
+        "\ue028": "i",  # dropped letter: "Anti-IL-12/IL-23 antibody—Ustekinumab"
     },
 
     # f142 — infectious disease body text font (high-frequency, ch.30–32)
