@@ -1,0 +1,37 @@
+# Virtual environment
+.venv/
+venv/
+
+# Data files (large, generated)
+data/chunks/*.json
+data/structured_symptoms/*.json
+data/results/*.json
+
+# Keep directory structure
+!data/chunks/.gitkeep
+!data/structured_symptoms/.gitkeep
+!data/results/.gitkeep
+
+# PDFs (stored outside repo)
+*.pdf
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.egg-info/
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# ChromaDB local storage
+chroma_db/
