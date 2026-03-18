@@ -93,10 +93,16 @@ FONT_PUA_MAP: dict[str, dict[str, str]] = {
     "f21": {
         "\ue025": "a",  # e.g. inflammatory, formulations
         "\ue029": "e",  # e.g. hyperkeratotic, purple-violet, flesh-colored
+        "\ue02a": "a",  # e.g. inflammatory (2nd a) — new (score=29)
         "\ue02c": "h",  # e.g. flesh-colored (h in flesh)
+        "\ue02e": "e",  # e.g. hyperkeratotic, flesh — new (score=21)
+        "\ue031": "h",  # e.g. flesh, hyperkeratotic — new (score=15)
         "\ue033": "p",  # e.g. hyperkeratotic, application
         "\ue035": "r",  # e.g. hyperkeratotic, purple, inflammatory
         "\ue037": "t",  # e.g. hyperkeratotic, inflammatory, formulations
+        "\ue038": "z",  # low-conf (all letters tied, score=4) — likely symbol
+        "\ue039": "r",  # e.g. purple, hyperkeratotic — new (score=17)
+        "\ue03b": "t",  # e.g. inflammatory, treatment — new (score=21)
     },
 
     # f25 — body text font (chapters 2+, main medical content)
@@ -114,6 +120,7 @@ FONT_PUA_MAP: dict[str, dict[str, str]] = {
     # f30 — table / figure caption font (used heavily in ch.2 tables)
     # These appear in the "likelihood ratio" tables and similar
     "f30": {
+        "\ue01d": "z",  # low-conf (all letters tied, score=18) — new
         "\ue021": "a",  # e.g. ratio, medical, physical, laboratory
         "\ue025": "e",  # e.g. positive, likelihood, negative, examination
         "\ue028": "h",  # e.g. likelihood, history, physical, chest
@@ -134,7 +141,13 @@ FONT_PUA_MAP: dict[str, dict[str, str]] = {
     # f36 — special symbol font (table reference separators and bullet markers)
     # e03c appears in "Table 3–1" style references as a dash/en-dash
     # e04b appears as a trailing list-item marker (mapped to empty string = skip)
-    "f36": {"\ue03c": "-", "\ue04b": ""},
+    # e005/e006 newly inferred (score=153/130, s and d lead but margin is small)
+    "f36": {
+        "\ue005": "s",  # score=153, s leads (a=135) — new
+        "\ue006": "d",  # score=130, d leads (a=128) — new
+        "\ue03c": "-",
+        "\ue04b": "",
+    },
 
     # f37 — endocrinology body text font (ch.26, pituitary/thyroid sections)
     "f37": {
@@ -202,6 +215,7 @@ FONT_PUA_MAP: dict[str, dict[str, str]] = {
     "f72": {
         "\ue006": "(",   # e.g. (40 mg), table headers
         "\ue007": ")",   # closing paren
+        "\ue02c": "h",   # e.g. which, Philadelphia — new (score=44)
         "\ue034": "h",   # e.g. chemotherapy, Philadelphia chromosome
         "\ue03d": "p",   # e.g. Tricuspid (tricusp-id)
     },
@@ -210,18 +224,25 @@ FONT_PUA_MAP: dict[str, dict[str, str]] = {
     "f73": {
         "\ue005": "(",  # e.g. (Secondary Mitral Regurgitation)
         "\ue006": ")",  # closing paren
+        "\ue007": "z",  # low-conf (all letters tied, score=20) — new
         "\ue008": "-",  # e.g. Long-Acting Nitrates
     },
 
     # f89 — infectious disease / virology body text font
-    "f89": {"\ue045": "o"},  # e.g. Centers for Disease Control and Prevention
+    "f89": {
+        "\ue03f": "o",  # score=250, o dominates strongly — new
+        "\ue045": "o",  # e.g. Centers for Disease Control and Prevention
+    },
 
     # f90 — cardiology / HIV pharmacology body text font
     "f90": {
         "\ue020": "2",   # e.g. P2Y12 inhibitors (digit '2')
         "\ue021": "a",   # e.g. Diagnosis (di-a-gnosis)
+        "\ue024": "r",   # e.g. or, laboratory — new (score=24, r leads)
         "\ue025": "e",   # e.g. Definitive, evidence
+        "\ue026": "t",   # e.g. treatment, without — new (score inferred)
         "\ue028": "h",   # e.g. with, without
+        "\ue02f": "p",   # e.g. pharmacotherapy — new
         "\ue030": "r",   # e.g. or, laboratory
         "\ue032": "t",   # e.g. with, without, laboratory
     },
@@ -234,6 +255,7 @@ FONT_PUA_MAP: dict[str, dict[str, str]] = {
     "f99": {
         "\ue023": "a",  # e.g. Manual, Measurement
         "\ue027": "e",  # e.g. Measurement, pressure
+        "\ue02a": "h",  # e.g. with, threshold — new (score inferred)
         "\ue032": "p",  # e.g. pharmacotherapy
         "\ue033": "r",  # e.g. Measurement, pressure
         "\ue035": "t",  # e.g. Measurement
@@ -244,15 +266,23 @@ FONT_PUA_MAP: dict[str, dict[str, str]] = {
 
     # f104 — blood vessel / vascular body text font
     "f104": {
+        "\ue007": "z",  # low-conf (all letters tied, score=4) — new
+        "\ue02d": "h",  # score=72, h clearly leads — new
         "\ue034": "c",  # e.g. Occlusive, atherosclerotic
         "\ue040": "o",  # e.g. Occlusive, atherosclerotic, lesions
     },
 
     # f111 — hemostasis / coagulation body text font
-    "f111": {"\ue03b": "f"},  # e.g. for, defects, of
+    "f111": {
+        "\ue004": "a",  # score=35, a clearly leads — new
+        "\ue005": "z",  # low-conf (all letters tied, score=31) — new
+        "\ue03b": "f",  # e.g. for, defects, of
+    },
 
     # f134 — drug table font (partial lists of medications)
     "f134": {
+        "\ue021": "h",  # score=6, h leads — new
+        "\ue028": "k",  # score=6, e/k/p/r tied — low-conf — new
         "\ue036": "h",  # e.g. this, have
         "\ue03d": "p",  # e.g. partial, implicated
     },
@@ -261,6 +291,7 @@ FONT_PUA_MAP: dict[str, dict[str, str]] = {
     "f139": {
         "\ue020": "a",   # e.g. Subacromial
         "\ue024": "e",   # e.g. Impingement, Description
+        "\ue027": "h",   # score=60, h clearly leads — new
         "\ue02f": "p",   # e.g. Impingement
         "\ue030": "r",   # e.g. Subacromial, Syndrome, Description
         "\ue032": "t",   # e.g. Impingement, Description
@@ -273,8 +304,11 @@ FONT_PUA_MAP: dict[str, dict[str, str]] = {
     "f141": {
         "\ue01e": "a",   # e.g. recommendation (2nd a)
         "\ue021": "e",   # e.g. recommendation (re-)
-        "\ue02e": "t",   # e.g. recommendation (-tion)
         "\ue025": "a",   # e.g. Dilation, curettage
+        "\ue02b": "p",   # score=18, p leads — new
+        "\ue02c": "r",   # score=18, r leads — new
+        "\ue02e": "t",   # e.g. recommendation (-tion)
+        "\ue033": "p",   # score=58, p clearly leads — new
         "\ue036": "t",   # e.g. Dilation (dila-tion), curettage
     },
 
@@ -287,7 +321,11 @@ FONT_PUA_MAP: dict[str, dict[str, str]] = {
     },
 
     # f163 — kidney disease / renal body text font (ch.22)
-    "f163": {"\ue038": "r"},  # e.g. Increased BUN
+    "f163": {
+        "\ue030": "h",  # score=14, h leads (tied with t) — new
+        "\ue036": "p",  # score=40, p clearly leads — new
+        "\ue038": "r",  # e.g. Increased BUN
+    },
 
     # f164 — kidney disease / renal body text font (ch.22, variant)
     "f164": {"\ue03b": "e"},  # e.g. some, patients, kidney, disease, experience
@@ -295,7 +333,224 @@ FONT_PUA_MAP: dict[str, dict[str, str]] = {
     # f174 — urology body text / heading font (ch.23)
     "f174": {
         "\ue020": "a",  # e.g. Diagnosis (di-a-gnosis)
+        "\ue027": "h",  # e.g. with, whether (h in 'h' position) — new
+        "\ue02e": "p",  # e.g. empiric, approach — new
         "\ue031": "t",  # e.g. acute Cystitis (acu-te, Cyst-i-tis)
+    },
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # NEW FONT ENTRIES — derived from analyze_flagged_pua.py (2026-03-18)
+    # Confidence note: entries marked "low-conf" had tied dictionary scores
+    # (all letters equally plausible); the substitution letter is the
+    # script's tiebreak by English letter-frequency order.
+    # ──────────────────────────────────────────────────────────────────────────
+
+    # f0 — early chapter body text font (ch.0–1 region)
+    "f0": {
+        "\ue005": "k",  # score=78 (a/b/d/k/l all tied — low-conf)
+        "\ue006": "y",  # score=74 (a/r/y tied — low-conf)
+        "\ue007": "z",  # score=2  (all letters tied — very low-conf)
+        "\ue008": "o",  # score=52, o beats others
+        "\ue035": "a",  # score=34, a clearly leads
+        "\ue041": "z",  # score=2  (all letters tied — very low-conf)
+    },
+
+    # f7 — ancillary/table font (miscellaneous chapters)
+    "f7": {
+        "\ue034": "z",  # score=14 (all tied — low-conf; likely symbol)
+    },
+
+    # f11 — footnote / small-text font (various chapters)
+    "f11": {
+        "\ue005": "z",  # score=2  (all tied — very low-conf)
+        "\ue008": "z",  # score=6  (all tied — low-conf)
+        "\ue015": "z",  # score=16 (all tied — low-conf)
+        "\ue027": "z",  # score=4  (all tied — low-conf)
+    },
+
+    # f12 — supplementary body text font (mid-book chapters)
+    "f12": {
+        "\ue02e": "p",  # score=12, p leads clearly
+    },
+
+    # f13 — table cell font (data tables throughout)
+    "f13": {
+        "\ue005": "z",  # score=16 (all tied — low-conf)
+        "\ue006": "z",  # score=6  (all tied — low-conf)
+        "\ue008": "z",  # score=2  (all tied — low-conf)
+        "\ue030": "h",  # score=12, h leads
+        "\ue031": "z",  # score=6  (all tied — low-conf)
+        "\ue036": "p",  # score=12, p leads
+        "\ue03e": "z",  # score=2  (all tied — low-conf)
+    },
+
+    # f35 — list / enumeration font (numbered-list markers)
+    "f35": {
+        "\ue006": "a",  # score=30, a leads over o=28
+        "\ue007": "z",  # score=24 (all tied — low-conf)
+        "\ue009": "z",  # score=8  (all tied — low-conf)
+    },
+
+    # f39 — footnote / caption font (figure notes)
+    "f39": {
+        "\ue008": "c",  # score=3, c leads
+        "\ue03e": "b",  # score=3, b/d/m/p tied — low-conf
+    },
+
+    # f43 — oncology / palliative body text font (variant of f3 encoding)
+    "f43": {
+        "\ue035": "a",  # score=112, a clearly leads
+        "\ue041": "m",  # score=50, m leads
+    },
+
+    # f46 — pharmacology / drug table font
+    "f46": {
+        "\ue034": "r",  # score=104, r clearly leads
+    },
+
+    # f47 — specialty body text font (immune / rheumatology chapters)
+    "f47": {
+        "\ue005": "a",  # score=97, a/e tied but a first by freq
+        "\ue006": "x",  # score=97, r/t/x tied — low-conf
+    },
+
+    # f49 — high-frequency body text font (multi-chapter usage)
+    "f49": {
+        "\ue035": "a",  # score=532, a dominates strongly
+        "\ue041": "m",  # score=258, m dominates
+    },
+
+    # f53 — section label font (short labels, infrequent)
+    "f53": {
+        "\ue034": "r",  # score=3, r leads
+    },
+
+    # f64 — specialty body text font (later chapters, sparse usage)
+    "f64": {
+        "\ue015": "a",  # score=18, a leads
+        "\ue024": "t",  # score=8, t leads
+    },
+
+    # f67 — symbol / special character font (non-alphabetic markers)
+    # Note: all mappings are low-confidence (tied scores) — likely decorative
+    "f67": {
+        "\ue03f": "z",  # score=56 (all tied — low-conf; likely non-letter symbol)
+        "\ue046": "z",  # score=221 (all tied — low-conf; likely non-letter symbol)
+    },
+
+    # f68 — body text font (late-chapter content, e.g. ch.29–30)
+    "f68": {
+        "\ue027": "h",  # score=34, h leads
+        "\ue02e": "p",  # score=8, p leads
+    },
+
+    # f82 — symbol / icon font (rare occurrences)
+    "f82": {
+        "\ue000": "z",  # score=2 (all tied — low-conf)
+    },
+
+    # f83 — symbol / icon font (rare occurrences)
+    "f83": {
+        "\ue009": "z",  # score=2 (all tied — low-conf)
+    },
+
+    # f85 — symbol / icon font (rare occurrences)
+    "f85": {
+        "\ue001": "z",  # score=2 (all tied — low-conf)
+    },
+
+    # f86 — symbol / icon font (chapter-boundary markers or decorative)
+    "f86": {
+        "\ue000": "z",  # score=38 (all tied — low-conf)
+    },
+
+    # f102 — ancillary table font (drug/dose tables)
+    "f102": {
+        "\ue004": "z",  # score=28 (all tied — low-conf)
+        "\ue005": "y",  # score=30, y leads slightly
+    },
+
+    # f108 — footnote / sub-caption font
+    "f108": {
+        "\ue005": "z",  # score=14 (all tied — low-conf)
+    },
+
+    # f109 — specialty body text font (later chapters)
+    "f109": {
+        "\ue026": "z",  # score=5 (all tied — low-conf)
+        "\ue02c": "z",  # score=9 (all tied — low-conf)
+        "\ue02f": "t",  # score=28, t leads
+    },
+
+    # f112 — supplementary font (infrequent, likely table annotations)
+    "f112": {
+        "\ue005": "v",  # score=6, b/c/f/g/h/v tied — low-conf
+        "\ue006": "z",  # score=4 (all tied — low-conf)
+    },
+
+    # f120 — footnote / small reference font
+    "f120": {
+        "\ue005": "z",  # score=14 (all tied — low-conf)
+    },
+
+    # f121 — footnote / small reference font (variant)
+    "f121": {
+        "\ue028": "z",  # score=4 (all tied — low-conf)
+    },
+
+    # f126 — specialty body text font (pulmonology / respiratory chapters)
+    "f126": {
+        "\ue01d": "z",  # score=4 (all tied — low-conf)
+        "\ue01e": "u",  # score=23, a/e/i/u all tied — low-conf
+        "\ue01f": "l",  # score=24, l/s tied — low-conf
+        "\ue022": "z",  # score=14 (all tied — low-conf)
+        "\ue023": "z",  # score=8  (all tied — low-conf)
+        "\ue024": "l",  # score=22, l/r tied — low-conf
+    },
+
+    # f142 — infectious disease body text font (high-frequency, ch.30–32)
+    # U+E03F strongly mapped to 'o' (score=164, clear winner)
+    "f142": {
+        "\ue03f": "o",  # score=164, o dominates (a/e=73, i=71)
+    },
+
+    # f145 — specialty body text font (sparse usage, later chapters)
+    "f145": {
+        "\ue018": "a",  # score=2, a leads
+        "\ue01c": "y",  # score=2, low-conf (a/d/e/l/t tied)
+        "\ue026": "x",  # score=2, low-conf (b/d/e/g/n tied)
+        "\ue03f": "o",  # score=22, o leads
+    },
+
+    # f147 — pharmacology / treatment table font
+    "f147": {
+        "\ue008": "c",  # score=24, c clearly leads
+        "\ue03e": "p",  # score=86, p clearly leads
+    },
+
+    # f149 — symbol / annotation font (low-confidence, likely non-alphabetic)
+    "f149": {
+        "\ue006": "z",  # score=2  (all tied — low-conf)
+        "\ue007": "z",  # score=2  (all tied — low-conf)
+        "\ue008": "z",  # score=4  (all tied — low-conf)
+        "\ue044": "z",  # score=105 (all tied — low-conf; likely numeric/symbol)
+    },
+
+    # f151 — symbol / annotation font (low-confidence)
+    "f151": {
+        "\ue007": "z",  # score=12 (all tied — low-conf)
+        "\ue03e": "z",  # score=6  (all tied — low-conf)
+    },
+
+    # f152 — specialty body text font (late chapters)
+    "f152": {
+        "\ue003": "p",  # score=36, c/m/p all tied — low-conf
+        "\ue004": "z",  # score=30 (all tied — low-conf)
+    },
+
+    # f177 — body text font (final chapters, sparse)
+    "f177": {
+        "\ue029": "a",  # score=2, a leads (very sparse data)
     },
 }
 
@@ -359,8 +614,24 @@ def fix_pua_in_span(text: str, font: str) -> tuple[str, list[str]]:
 _HEADER_FOOTER_FONTS = {"f1", "f15", "f10", "f30"}
 
 # Fonts used exclusively for body text (not headings)
+# Updated 2026-03-18: added f12, f43, f46, f49, f53, f64, f68, f126, f142,
+#                     f145, f147, f152, f177 from analyze_flagged_pua.py
 _BODY_FONTS = {"f14", "f25", "f3", "f6", "f21", "f32", "f40", "f44", "f45",
-               "f47", "f49", "f69", "f72", "f73", "f90", "f9"}
+               "f47", "f49", "f69", "f72", "f73", "f90", "f9",
+               # new entries (2026-03-18)
+               "f12",   # supplementary body text font (mid-book chapters)
+               "f43",   # oncology / palliative body text (variant of f3)
+               "f46",   # pharmacology / drug table body font
+               "f53",   # section label font (short labels)
+               "f64",   # specialty body text (later chapters)
+               "f68",   # body text font (ch.29–30)
+               "f126",  # pulmonology / respiratory body text
+               "f142",  # infectious disease body text (high-frequency)
+               "f145",  # specialty body text (later chapters, sparse)
+               "f147",  # pharmacology / treatment table body font
+               "f152",  # specialty body text (late chapters)
+               "f177",  # body text font (final chapters)
+               }
 
 # Fonts used for inline labels / section headings at size 9
 _INLINE_LABEL_FONTS = {"f16", "f20", "f31", "f34"}
