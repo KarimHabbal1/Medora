@@ -17,7 +17,7 @@
    - [Step 1: Drop Empty Sections](#step-1-drop-empty-sections)
    - [Step 2: Short Section Merging](#step-2-short-section-merging)
    - [Step 3: Chunk Emission](#step-3-chunk-emission)
-   - [Step 4: Junk Filtering](#step-4-junk-filtering)
+   - [Step 4: Content-Based Cleaning and Junk Removal](#step-4-content-based-cleaning-and-junk-removal)
    - [Step 5: Post-Merge of Short Chunks](#step-5-post-merge-of-short-chunks)
    - [Long Section Splitting](#long-section-splitting)
    - [Essentials of Diagnosis Boxes](#essentials-of-diagnosis-boxes)
@@ -121,32 +121,39 @@ If the main text is between `CHUNK_MIN_WORDS` and `CHUNK_MAX_WORDS` words (inclu
 
 Sections that were tagged `kept_short` (below 50 words with no merge target) also fall through to case 3c and are emitted as-is. They are retained because short clinical statements — such as "All patients with orbital cellulitis must be referred emergently" — carry genuine medical information despite their brevity, and filtering them by word count alone would lose real content.
 
-### Step 4: Junk Filtering
+### Step 4: Content-Based Cleaning and Junk Removal
 
-After all chunks are emitted from the merging and splitting steps, some chunks are artifacts of PDF extraction rather than real medical content. These are identified and removed by a set of content-based rules.
+After all chunks are emitted from the merging and splitting steps, some chunks contain artifacts from PDF extraction rather than real medical content. Step 4 handles these in two distinct ways: **cleaning** and **dropping**.
 
-The junk filter removes a chunk if any of the following conditions are true:
+**Dropping (entire chunk removed):**
 
 | Criterion | Rationale |
 |---|---|
-| Word count < 5 | Too short to carry any meaning; almost certainly a stray header or page number |
-| Contains "CMDT 2022" | This is a running page header that appears at the top of many pages in the PDF; the parser occasionally captures it as body text |
-| Text matches `^[\d\s.]+$` | Pure digits and whitespace — a page number captured in isolation |
 | Chapter is "Index" | The book index is an alphabetical list of terms and page numbers; it has no clinical value for retrieval |
+| Completely empty after cleaning | A chunk whose only content was artifact text; nothing real remains |
 
-Critically, the filter is based on content rather than word count alone. This distinction matters: a chunk of 8 words that is a genuine clinical instruction should be kept; a chunk of 8 words that is a page header artifact should be removed. The "CMDT 2022" substring check and the pure-digits regex handle artifact detection without collateral damage to legitimate short content.
+**Cleaning (artifact text removed, chunk retained):**
 
-The `is_junk_chunk()` function is applied as a list comprehension filter over all emitted chunks, and the count of removed chunks is printed.
+| Artifact | Pattern | Example |
+|---|---|---|
+| "CMDT 2022" page headers | `\d*\s*CMDT 2022\s*` | "129 CMDT 2022" or "CMDT 2022 papULeS" |
+| Isolated page number lines | Lines matching `^\s*\d+\s*$` | A line containing only "512" |
+
+The cleaning approach is a deliberate design choice: instead of dropping any chunk that contains an artifact, the artifact text is stripped and the remaining content is preserved. A clinical paragraph that happened to have a page header embedded in it becomes a clean clinical paragraph rather than a lost chunk. Only after cleaning is a chunk discarded — and only if the cleaning left it entirely empty.
+
+This means there is no hardcoded word-count threshold for dropping. Short chunks are never dropped solely for being short; they are either cleaned and kept, or merged in Step 5. The only content-based drops are the Index chapter and the rare all-artifact chunk.
+
+The `clean_chunk_text()` function is applied to every chunk after the Index drop, and any chunks that become empty after cleaning are then filtered out.
 
 ### Step 5: Post-Merge of Short Chunks
 
-Even after the earlier merging pass, some chunks may end up below `CHUNK_MIN_WORDS` (50 words) after junk filtering. This can happen, for example, when a `kept_short` section was not merged earlier because no valid forward neighbour existed in the same group.
+Even after the earlier merging pass, some chunks may end up below `CHUNK_MIN_WORDS` (50 words) after cleaning. This can happen, for example, when a `kept_short` section had no valid forward neighbour in Step 2, or when cleaning stripped artifact text and left a chunk smaller than the threshold.
 
-A second pass over the chunk list addresses this. For each chunk whose word count is below 50, the algorithm checks whether the immediately preceding chunk in the output list shares the same `(chapter, section)`. If so, the short chunk's text is appended to the previous chunk, the word counts are updated, and the page ranges are merged. The short chunk is consumed into the preceding chunk.
+Step 5 runs two sequential passes to resolve as many of these cases as possible. The goal is to preserve all clinical content by giving short chunks enough surrounding context to produce useful embeddings.
 
-If the short chunk is the first chunk from its `(chapter, section)` group (i.e. no preceding chunk in the same section), it is kept as-is rather than merged across a section boundary.
+**Pass A — merge into the previous chunk (same section):**
 
-This pass operates in-place on the accumulating `merged_chunks` list:
+A forward scan through the chunk list. For each chunk below 50 words, the algorithm checks whether the immediately preceding chunk shares the same `(chapter, section)`. If so, the short chunk's text is appended to the previous chunk, word counts are updated, and page ranges are merged. This handles the common case: a short conclusion or transitional note that follows a longer passage in the same section.
 
 ```python
 for chunk in chunks:
@@ -166,7 +173,13 @@ for chunk in chunks:
         merged_chunks.append(chunk)
 ```
 
-After this step, the final list of structured chunks is complete.
+**Pass B — merge into the next chunk (same section):**
+
+After Pass A, some short chunks remain: those that are the first chunk in their `(chapter, section)` group and therefore had no previous neighbour to absorb them. Pass B handles these by looking forward instead of backward. For each remaining short chunk, the algorithm scans ahead in the list for the next chunk that shares the same `(chapter, section)`. If found, the short chunk's text is prepended to that next chunk. The short chunk is then consumed and not emitted separately.
+
+If a short chunk has no neighbour in either direction within its section — no previous chunk and no subsequent chunk in the same section — it is kept as-is. These are truly orphaned chunks, typically a single brief statement in a section with no surrounding content from the same topic. They are rare but retained because their clinical content is real.
+
+After both passes, the final list of structured chunks is complete.
 
 ---
 
@@ -304,7 +317,7 @@ Without overlap, a 200-word window cuts at an arbitrary word boundary. The sente
 
 With a 50-word overlap, each chunk's last 50 words are repeated as the first 50 words of the next chunk. A sentence that straddles the strict boundary appears in full in at least one of the two chunks.
 
-The trade-off is that the baseline produces more total chunks (8,216 vs 4,557 for the structured approach), and many words appear in two chunks rather than one. This inflates the index size and increases redundancy, but ensures that no sentence is permanently fragmented.
+The trade-off is that the baseline produces more total chunks (8,216 vs 5,631 for the structured approach), and many words appear in two chunks rather than one. This inflates the index size and increases redundancy, but ensures that no sentence is permanently fragmented.
 
 ---
 
@@ -314,11 +327,15 @@ The trade-off is that the baseline produces more total chunks (8,216 vs 4,557 fo
 
 | Metric | Value |
 |---|---|
-| Total chunks | 4,557 |
-| Mean word count | 189 words |
-| Median word count | 148 words |
-| Minimum word count | 5 words |
-| Maximum word count | 500 words |
+| Total chunks | 5,631 |
+| Mean word count | 196.1 words |
+| Median word count | 154.0 words |
+| Minimum word count | 2 words |
+| Maximum word count | 568 words |
+
+**Notable tail characteristics:**
+- 41 chunks under 50 words (0.7% of total) — truly orphaned chunks with no neighbour in either direction; all carry real clinical content
+- 78 chunks in the 500–568 word range — a side effect of Pass A merging a short chunk into a neighbour that was already near the 500-word ceiling; the combined result slightly exceeds `CHUNK_MAX_WORDS` but is retained because both pieces of content belong together
 
 ### Baseline chunks
 
@@ -334,15 +351,16 @@ The trade-off is that the baseline produces more total chunks (8,216 vs 4,557 fo
 
 | Property | Structured | Baseline |
 |---|---|---|
-| Total chunks | 4,557 | 8,216 |
-| Mean words per chunk | 189 | ~200 |
-| Median words per chunk | 148 | ~200 |
+| Total chunks | 5,631 | 8,216 |
+| Mean words per chunk | 196.1 | ~200 |
+| Median words per chunk | 154.0 | ~200 |
 | Respects section boundaries | Yes | No |
 | Essentials boxes separated | Yes | No |
 | Chapter/section metadata | Full hierarchy | Approximate |
 | Overlap between chunks | No | 50 words |
+| Content dropped | Index chapter only | None |
 
-The structured approach produces roughly half as many chunks as the baseline, because it merges short sections rather than emitting them as undersized windows, and it uses the natural section boundaries of the book as splitting points. The baseline's chunk count is higher because the 150-word stride means every 200-word region of the corpus is covered by at least one chunk (with overlapping coverage at boundaries).
+The structured approach produces fewer chunks than the baseline because it merges short sections rather than emitting them as undersized windows, and it uses the natural section boundaries of the book as splitting points. The baseline's chunk count is higher because the 150-word stride means every 200-word region of the corpus is covered by at least one chunk (with overlapping coverage at boundaries).
 
 The quality comparison between these two approaches is the subject of Phase 2 evaluation.
 
@@ -356,18 +374,21 @@ The TMT textbook ends with an alphabetical Index chapter — a dense list of med
 
 Without this exclusion, the index entries would produce thousands of short, meaningless chunks that would pollute the retrieval index with noise.
 
-### Junk artifacts filtered by content
+### Artifact text cleaned, not discarded
 
-Junk filtering uses content-based rules rather than a word-count threshold. This is a deliberate design choice: filtering by word count alone would remove short but clinically important statements. The rules target specific artifact patterns (running headers containing "CMDT 2022", pure-digit page numbers, fragments under 5 words) without touching legitimate short content.
+Step 4 uses a clean-then-filter approach rather than a drop-on-detection approach. Running page headers ("CMDT 2022") and isolated page number lines are stripped from chunk text, and the cleaned chunk is retained. Only a chunk that is entirely composed of artifact text — empty after cleaning — is discarded. This means no clinical content is lost due to the presence of a stray header.
+
+There is no hardcoded minimum word count for dropping chunks. Short chunks are handled by merging, not by deletion.
 
 ### Short chunks merged to preserve information
 
-Two separate merging passes handle short content:
+Three separate passes handle short content across different pipeline stages:
 
-- **Forward merge (Step 2):** Applied before chunk emission, merges short raw sections into their successor within the same `(chapter, section)` group.
-- **Post-merge (Step 5):** Applied after chunk emission and junk filtering, appends short residual chunks to the preceding chunk in the same section.
+- **Forward merge (Step 2):** Applied before chunk emission. Short raw sections are merged into their successor within the same `(chapter, section)` group, building up enough context before any chunk is emitted.
+- **Post-merge Pass A (Step 5):** Applied after chunk emission and cleaning. Short residual chunks are appended to the immediately preceding chunk in the same section. Handles short conclusions and trailing notes.
+- **Post-merge Pass B (Step 5):** Applied immediately after Pass A. Catches short chunks that are first in their section (no previous neighbour). These are prepended to the next chunk in the same section.
 
-Together these passes ensure that short fragments of clinical text are embedded with enough surrounding context to produce useful vectors, while maintaining section-level boundaries so that unrelated topics are not mixed.
+Together these passes ensure that short fragments of clinical text are embedded with enough surrounding context to produce useful vectors, while maintaining section-level boundaries so that unrelated topics are not mixed. Only truly orphaned chunks — with no neighbour in either direction in their section — remain as standalone short chunks (41 in total, 0.7% of the final output).
 
 ### Oversized chunks force-split at word boundaries
 
@@ -413,9 +434,9 @@ Loaded 7,942 raw sections
 [structured] Starting structure-aware chunking …
 [structured] Dropped 12 empty sections — 7,930 remain
 [structured] After short-section merging: 6,841 sections
-[structured] Dropped 187 junk chunks (page numbers, headers, <5 words) — 4,612 remain
-[structured] Merged 55 short chunks (<50 words) into previous chunk (same section) — 4,557 final chunks
-[structured] Total structured chunks produced: 4,557
+[structured] Dropped 187 non-clinical chapter chunks (Index) — 6,654 remain
+[structured] Merged 1,064 short chunks (<50 words) into neighbors — 5,631 final chunks
+[structured] Total structured chunks produced: 5,631
 
 --- BASELINE CHUNKING ---
 [baseline] Concatenating all section text …
