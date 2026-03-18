@@ -35,3 +35,4 @@ Thumbs.db
 
 # ChromaDB local storage
 chroma_db/
+chroma_symptoms/
