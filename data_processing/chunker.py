@@ -128,6 +128,28 @@ def split_into_sentences(text: str) -> list[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
+def force_split_by_words(text: str, max_words: int) -> list[str]:
+    """
+    Last-resort hard split: chop text into word-boundary chunks of at most max_words
+    words each.
+
+    This is used when a segment has no paragraph breaks and no sentence boundaries
+    (e.g. the book index, which is a dense list of terms and page numbers with no
+    punctuation patterns that the sentence splitter can act on).  Without this
+    fallback those segments would be emitted as-is, violating the CHUNK_MAX_WORDS
+    ceiling.
+
+    # FIX: over-500 fallback — force word-boundary split when all other strategies fail
+    """
+    words = text.split()
+    chunks: list[str] = []
+    for start in range(0, len(words), max_words):
+        part = " ".join(words[start : start + max_words])
+        if part:
+            chunks.append(part)
+    return chunks
+
+
 def merge_to_target(segments: list[str], target_words: int, max_words: int) -> list[str]:
     """
     Greedily merge a list of text segments into sub-chunks that each stay
@@ -137,7 +159,9 @@ def merge_to_target(segments: list[str], target_words: int, max_words: int) -> l
       - Walk through segments accumulating words.
       - When adding the next segment would exceed max_words, flush the current
         accumulation as a sub-chunk and start a new one.
-      - Any segment that individually exceeds max_words becomes its own sub-chunk.
+      - Any segment that individually exceeds max_words is force-split by word
+        boundaries rather than emitted as-is, so the max_words ceiling is always
+        respected.
 
     Args:
         segments:    Ordered list of text strings (paragraphs or sentences).
@@ -159,12 +183,14 @@ def merge_to_target(segments: list[str], target_words: int, max_words: int) -> l
             continue
 
         if seg_wc > max_words:
-            # This single segment is oversized — flush current, emit segment alone
+            # FIX: over-500 — a single segment is too large to emit whole.
+            # Flush any accumulated content, then force-split the oversized
+            # segment by word boundaries so we never breach max_words.
             if current_parts:
                 chunks.append(" ".join(current_parts))
                 current_parts = []
                 current_wc = 0
-            chunks.append(seg)
+            chunks.extend(force_split_by_words(seg, max_words))
             continue
 
         if current_wc + seg_wc > max_words and current_parts:
@@ -396,6 +422,25 @@ def build_structured_chunks(raw_sections: list[dict]) -> tuple[list[dict], dict]
             cid = build_chunk_id(ch, se, su, n)
             chunks.append(make_structured_chunk(cid, sec, main_text))
             stats["normal"] += 1
+
+    # -----------------------------------------------------------------------
+    # Step 4 — Drop trivially small chunks (headings / label fragments)
+    #
+    # After splitting and merging, some chunks end up with fewer than 20 words.
+    # Inspection shows these are almost always artefacts: partial bullet labels,
+    # orphaned section headings, or essentials fragments that were truncated during
+    # PDF extraction.  They carry no useful medical content for retrieval.
+    #
+    # Threshold chosen:
+    #   < 20 words → drop  (headings, stray labels, page-number artefacts)
+    #   20–50 words → keep (short-but-real clinical notes, "When to Admit" items, etc.)
+    #
+    # FIX: under-20 filter — remove chunks that are too short to be useful
+    # -----------------------------------------------------------------------
+    before_filter = len(chunks)
+    chunks = [c for c in chunks if c["word_count"] >= 20]
+    dropped_short = before_filter - len(chunks)
+    print(f"[structured] Dropped {dropped_short} chunks under 20 words — {len(chunks)} remain")
 
     print(f"[structured] Total structured chunks produced: {len(chunks)}")
     return chunks, stats
