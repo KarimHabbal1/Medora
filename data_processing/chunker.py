@@ -471,6 +471,51 @@ def build_structured_chunks(raw_sections: list[dict]) -> tuple[list[dict], dict]
     dropped_junk = before_filter - len(chunks)
     print(f"[structured] Dropped {dropped_junk} junk chunks (page numbers, headers, <5 words) — {len(chunks)} remain")
 
+    # -----------------------------------------------------------------------
+    # Step 5 — Merge short chunks (<50 words) into the NEXT chunk
+    #
+    # After junk removal, some chunks are still under 50 words. These are
+    # real clinical content (referral instructions, brief notes) but too
+    # short to produce a useful embedding on their own. Instead of losing
+    # them as weak standalone chunks, we append their text to the next
+    # chunk. This preserves the information while giving the embedding
+    # model enough context to work with.
+    #
+    # If the last chunk(s) are short, append them to the PREVIOUS chunk
+    # instead (since there's no "next" to merge into).
+    # -----------------------------------------------------------------------
+    merged_chunks: list[dict] = []
+    pending_short_text: list[str] = []  # short chunk texts waiting to be prepended
+    stats["post_merged"] = 0
+
+    for chunk in chunks:
+        if chunk["word_count"] < CHUNK_MIN_WORDS:
+            # Accumulate short chunk text to prepend to the next chunk
+            pending_short_text.append(chunk["text"])
+            stats["post_merged"] += 1
+        else:
+            if pending_short_text:
+                # Prepend accumulated short text to this chunk
+                combined = "\n\n".join(pending_short_text) + "\n\n" + chunk["text"]
+                chunk = dict(chunk)  # shallow copy
+                chunk["text"] = combined.strip()
+                chunk["word_count"] = word_count(combined)
+                pending_short_text = []
+            merged_chunks.append(chunk)
+
+    # If trailing short chunks remain, append them to the last chunk
+    if pending_short_text and merged_chunks:
+        last = dict(merged_chunks[-1])
+        combined = last["text"] + "\n\n" + "\n\n".join(pending_short_text)
+        last["text"] = combined.strip()
+        last["word_count"] = word_count(combined)
+        merged_chunks[-1] = last
+        stats["post_merged"] += len(pending_short_text)
+        pending_short_text = []
+
+    chunks = merged_chunks
+    print(f"[structured] Merged {stats['post_merged']} short chunks (<{CHUNK_MIN_WORDS} words) into neighbors — {len(chunks)} final chunks")
+
     print(f"[structured] Total structured chunks produced: {len(chunks)}")
     return chunks, stats
 
