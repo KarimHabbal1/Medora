@@ -610,7 +610,7 @@ def word_count_buckets(word_counts: list[int]) -> dict:
             buckets["100-200"] += 1
         elif wc < 300:
             buckets["200-300"] += 1
-        elif wc < 500:
+        elif wc <= 500:
             buckets["300-500"] += 1
         elif wc <= 1000:
             buckets["500-1000"] += 1
