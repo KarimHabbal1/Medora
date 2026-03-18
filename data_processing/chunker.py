@@ -505,24 +505,22 @@ def build_structured_chunks(raw_sections: list[dict]) -> tuple[list[dict], dict]
     # If a short chunk is the FIRST in its section (no previous chunk in
     # the same section), keep it as-is.
     # -----------------------------------------------------------------------
+    # --- Pass A: merge short chunks into PREVIOUS chunk (same section) ---
     merged_chunks: list[dict] = []
     stats["post_merged"] = 0
 
     for chunk in chunks:
         if chunk["word_count"] < CHUNK_MIN_WORDS and merged_chunks:
             prev = merged_chunks[-1]
-            # Only merge if previous chunk is in the same chapter + section
             same_section = (
                 prev["chapter"] == chunk["chapter"]
                 and prev["section"] == chunk["section"]
             )
             if same_section:
-                # Append short chunk text to the previous chunk
-                prev = dict(prev)  # shallow copy
+                prev = dict(prev)
                 combined = prev["text"] + "\n\n" + chunk["text"]
                 prev["text"] = combined.strip()
                 prev["word_count"] = word_count(combined)
-                # Extend page range to cover both chunks
                 prev["page_range"] = [
                     min(prev["page_range"][0], chunk["page_range"][0]),
                     max(prev["page_range"][1], chunk["page_range"][1]),
@@ -530,13 +528,49 @@ def build_structured_chunks(raw_sections: list[dict]) -> tuple[list[dict], dict]
                 merged_chunks[-1] = prev
                 stats["post_merged"] += 1
             else:
-                # Different section — keep as-is
                 merged_chunks.append(chunk)
         else:
             merged_chunks.append(chunk)
 
-    chunks = merged_chunks
-    print(f"[structured] Merged {stats['post_merged']} short chunks (<{CHUNK_MIN_WORDS} words) into previous chunk (same section) — {len(chunks)} final chunks")
+    # --- Pass B: merge remaining short chunks into NEXT chunk (same section) ---
+    # This catches short chunks that are first in their section (no previous
+    # neighbor to merge into). We walk backwards-style: accumulate short chunks
+    # and prepend them to the next valid chunk in the same section.
+    final_chunks: list[dict] = []
+    i = 0
+    while i < len(merged_chunks):
+        chunk = merged_chunks[i]
+        if chunk["word_count"] < CHUNK_MIN_WORDS:
+            # Look ahead for the next chunk in the same section
+            found_next = False
+            for j in range(i + 1, len(merged_chunks)):
+                nxt = merged_chunks[j]
+                if nxt["chapter"] == chunk["chapter"] and nxt["section"] == chunk["section"]:
+                    # Prepend short chunk text to the next chunk
+                    nxt = dict(nxt)
+                    combined = chunk["text"] + "\n\n" + nxt["text"]
+                    nxt["text"] = combined.strip()
+                    nxt["word_count"] = word_count(combined)
+                    nxt["page_range"] = [
+                        min(chunk["page_range"][0], nxt["page_range"][0]),
+                        max(chunk["page_range"][1], nxt["page_range"][1]),
+                    ]
+                    merged_chunks[j] = nxt
+                    stats["post_merged"] += 1
+                    found_next = True
+                    break
+                else:
+                    # Different section — stop looking
+                    break
+            if not found_next:
+                # No valid neighbor at all — keep as-is (truly orphaned)
+                final_chunks.append(chunk)
+        else:
+            final_chunks.append(chunk)
+        i += 1
+
+    chunks = final_chunks
+    print(f"[structured] Merged {stats['post_merged']} short chunks (<{CHUNK_MIN_WORDS} words) into neighbors — {len(chunks)} final chunks")
 
     print(f"[structured] Total structured chunks produced: {len(chunks)}")
     return chunks, stats
