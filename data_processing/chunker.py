@@ -444,32 +444,51 @@ def build_structured_chunks(raw_sections: list[dict]) -> tuple[list[dict], dict]
     _NON_CLINICAL_CHAPTERS = {"Index"}
 
     def is_junk_chunk(chunk: dict) -> bool:
-        """Check if a chunk is a PDF artifact rather than real content."""
-        text = chunk["text"].strip()
-        wc = chunk["word_count"]
-
+        """Check if a chunk is a non-clinical chapter (Index)."""
         # Non-clinical chapters (Index = alphabetical term list with page numbers)
         if chunk["chapter"] in _NON_CLINICAL_CHAPTERS:
             return True
-
-        # Too short to carry meaning
-        if wc < 5:
-            return True
-
-        # Running page header artifact
-        if "CMDT 2022" in text:
-            return True
-
-        # Pure digits / page numbers
-        if re.match(r"^[\d\s.]+$", text):
-            return True
-
         return False
 
+    def clean_chunk_text(chunk: dict) -> dict:
+        """
+        Clean artifact text from a chunk and recalculate word count.
+
+        - Strips "CMDT 2022" page header artifacts from text
+        - Strips pure digit/page number lines
+        - Returns cleaned chunk (may have reduced word count)
+        """
+        text = chunk["text"]
+
+        # Remove "CMDT 2022" and surrounding whitespace/digits (page header artifacts)
+        # Pattern matches lines like "129 CMDT 2022" or "CMDT 2022 papULeS"
+        text = re.sub(r"\d*\s*CMDT 2022\s*", "", text).strip()
+
+        # Remove lines that are purely digits (page numbers)
+        lines = text.split("\n")
+        lines = [l for l in lines if not re.match(r"^\s*\d+\s*$", l.strip())]
+        text = "\n".join(lines).strip()
+
+        chunk = dict(chunk)  # shallow copy
+        chunk["text"] = text
+        chunk["word_count"] = word_count(text)
+        return chunk
+
+    # First: drop non-clinical chapters entirely
     before_filter = len(chunks)
     chunks = [c for c in chunks if not is_junk_chunk(c)]
     dropped_junk = before_filter - len(chunks)
-    print(f"[structured] Dropped {dropped_junk} junk chunks (page numbers, headers, <5 words) — {len(chunks)} remain")
+    print(f"[structured] Dropped {dropped_junk} non-clinical chapter chunks (Index) — {len(chunks)} remain")
+
+    # Second: clean artifact text (CMDT headers, page numbers) from remaining chunks
+    chunks = [clean_chunk_text(c) for c in chunks]
+
+    # Third: remove chunks that are completely empty after cleaning
+    before_empty = len(chunks)
+    chunks = [c for c in chunks if c["word_count"] > 0]
+    dropped_empty = before_empty - len(chunks)
+    if dropped_empty:
+        print(f"[structured] Dropped {dropped_empty} chunks that became empty after cleaning")
 
     # -----------------------------------------------------------------------
     # Step 5 — Merge short chunks (<50 words) into the PREVIOUS chunk
