@@ -424,23 +424,44 @@ def build_structured_chunks(raw_sections: list[dict]) -> tuple[list[dict], dict]
             stats["normal"] += 1
 
     # -----------------------------------------------------------------------
-    # Step 4 — Drop trivially small chunks (headings / label fragments)
+    # Step 4 — Drop junk chunks (artifacts from PDF extraction)
     #
-    # After splitting and merging, some chunks end up with fewer than 20 words.
-    # Inspection shows these are almost always artefacts: partial bullet labels,
-    # orphaned section headings, or essentials fragments that were truncated during
-    # PDF extraction.  They carry no useful medical content for retrieval.
+    # After splitting and merging, some chunks are artifacts rather than
+    # real medical content. We filter by content, not just word count,
+    # to avoid dropping short-but-important clinical statements like
+    # "All patients with orbital cellulitis must be referred emergently."
     #
-    # Threshold chosen:
-    #   < 20 words → drop  (headings, stray labels, page-number artefacts)
-    #   20–50 words → keep (short-but-real clinical notes, "When to Admit" items, etc.)
+    # Drop criteria (must meet ANY):
+    #   - Under 5 words (too short to carry any meaning)
+    #   - Contains "CMDT 2022" (running page header artifact)
+    #   - Text is purely digits/whitespace (page numbers)
     #
-    # FIX: under-20 filter — remove chunks that are too short to be useful
+    # Keep: everything else, even if short — a 10-word referral
+    # instruction is medically critical.
     # -----------------------------------------------------------------------
+    def is_junk_chunk(chunk: dict) -> bool:
+        """Check if a chunk is a PDF artifact rather than real content."""
+        text = chunk["text"].strip()
+        wc = chunk["word_count"]
+
+        # Too short to carry meaning
+        if wc < 5:
+            return True
+
+        # Running page header artifact
+        if "CMDT 2022" in text:
+            return True
+
+        # Pure digits / page numbers
+        if re.match(r"^[\d\s.]+$", text):
+            return True
+
+        return False
+
     before_filter = len(chunks)
-    chunks = [c for c in chunks if c["word_count"] >= 20]
-    dropped_short = before_filter - len(chunks)
-    print(f"[structured] Dropped {dropped_short} chunks under 20 words — {len(chunks)} remain")
+    chunks = [c for c in chunks if not is_junk_chunk(c)]
+    dropped_junk = before_filter - len(chunks)
+    print(f"[structured] Dropped {dropped_junk} junk chunks (page numbers, headers, <5 words) — {len(chunks)} remain")
 
     print(f"[structured] Total structured chunks produced: {len(chunks)}")
     return chunks, stats
