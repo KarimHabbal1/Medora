@@ -435,14 +435,22 @@ def build_structured_chunks(raw_sections: list[dict]) -> tuple[list[dict], dict]
     #   - Under 5 words (too short to carry any meaning)
     #   - Contains "CMDT 2022" (running page header artifact)
     #   - Text is purely digits/whitespace (page numbers)
+    #   - Chapter is "Index" (alphabetical term+page list, no clinical value)
     #
     # Keep: everything else, even if short — a 10-word referral
     # instruction is medically critical.
     # -----------------------------------------------------------------------
+    # Chapters that contain no clinical content — just reference material
+    _NON_CLINICAL_CHAPTERS = {"Index"}
+
     def is_junk_chunk(chunk: dict) -> bool:
         """Check if a chunk is a PDF artifact rather than real content."""
         text = chunk["text"].strip()
         wc = chunk["word_count"]
+
+        # Non-clinical chapters (Index = alphabetical term list with page numbers)
+        if chunk["chapter"] in _NON_CLINICAL_CHAPTERS:
+            return True
 
         # Too short to carry meaning
         if wc < 5:
