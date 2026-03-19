@@ -79,6 +79,11 @@ REQUIRED_FIELDS = {
     "key_history_points",
     "key_exam_findings",
     "initial_workup",
+    "when_to_admit",
+    "when_to_refer",
+    "treatment_overview",
+    "etiology",
+    "epidemiology",
 }
 
 # Default Ollama settings
@@ -121,7 +126,20 @@ SCHEMA_TEMPLATE = """
   "specialty_routing": ["string — relevant specialties"],
   "key_history_points": ["string — important history to gather"],
   "key_exam_findings": ["string — important physical exam findings"],
-  "initial_workup": ["string — recommended initial tests/studies"]
+  "initial_workup": ["string — recommended initial tests/studies"],
+  "when_to_admit": [
+    "string — specific criteria or clinical scenarios that warrant hospital admission"
+  ],
+  "when_to_refer": [
+    "string — specific criteria or clinical scenarios that warrant specialist referral"
+  ],
+  "treatment_overview": [
+    "string — key treatment approaches, drug classes, or interventions mentioned"
+  ],
+  "etiology": [
+    "string — common causes, mechanisms, or contributing factors"
+  ],
+  "epidemiology": "string — brief note on prevalence, demographics, or risk populations"
 }
 """
 
