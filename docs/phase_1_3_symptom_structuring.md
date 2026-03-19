@@ -91,7 +91,9 @@ If all four strategies fail, the symptom is stored as `{"symptom": "<name>", "er
 
 ## The Schema
 
-Each structured symptom object conforms to a fixed 10-field schema. Every field is required; the validator flags any missing fields during processing.
+Each structured symptom object conforms to a fixed 15-field schema. Every field is required; the validator flags any missing fields during processing.
+
+The original schema had 10 fields covering the intake-critical information: questions, red flags, urgency rules, differential diagnoses, and routing. After reviewing the textbook subsections more carefully — specifically "When to Admit", "When to Refer", "Treatment", and the etiology and epidemiology discussions — it became clear that five additional fields were needed to avoid dropping clinically important content. The schema was expanded to 15 fields before the full GPT-4o run. This iterative schema development is documented here as a methodological record for the thesis: structuring medical knowledge correctly requires reading the source material structurally, not just thematically.
 
 ### `symptom` (string)
 
@@ -148,25 +150,45 @@ Physical examination findings that are diagnostically significant for this sympt
 
 Recommended initial investigations. Used to generate a suggested workup list in the clinician-facing summary produced after each intake session.
 
+### `when_to_admit` (array of strings)
+
+Specific criteria that warrant hospital admission for this symptom. Drawn directly from the textbook's "When to Admit" subsections. Each entry describes a clinical scenario (e.g., "Massive hemoptysis requiring airway protection") rather than a generic threshold. Entry counts range from 1 to 7 depending on the complexity of the symptom and the number of distinct admission triggers in the source text.
+
+### `when_to_refer` (array of strings)
+
+Criteria indicating that specialist referral is appropriate. Drawn from the textbook's "When to Refer" subsections. Each entry identifies a specific clinical situation and, where possible, the target specialty (e.g., "Nephrotic syndrome to a nephrologist"). Entry counts range from 1 to 3 per symptom.
+
+### `treatment_overview` (array of strings)
+
+Key treatment approaches relevant to this symptom, including drug classes, procedural interventions, and supportive measures. This field does not replace condition-specific management guidance in Chapters 3–42 — it captures the top-level therapeutic options that the Intake Agent can include in the clinician handover note as a prompt for immediate management planning. Entry counts range from 3 to 7 per symptom.
+
+### `etiology` (array of strings)
+
+Common causes, pathophysiological mechanisms, and contributing factors for this symptom. Drawn from the textbook's aetiological discussions within each symptom section. This field provides the agent with the conceptual framework underlying the differential diagnosis — why certain conditions are on the list, not just which conditions are on it. Entry counts range from 3 to 8 per symptom.
+
+### `epidemiology` (string)
+
+A single descriptive string summarising prevalence data, affected demographics, incidence rates, and high-risk populations for this symptom, as stated in the textbook. Unlike the array fields, this is a free-text summary because the textbook presents epidemiological data narratively rather than as enumerable items. All 11 symptoms have this field populated.
+
 ---
 
 ## The 11 Structured Symptoms
 
-The GPT-4o run produced complete structured objects for all 11 symptoms in Chapter 2. The table below summarises each symptom using counts from `tmt_symptoms_gpt4o.json`.
+The GPT-4o run produced complete structured objects for all 11 symptoms in Chapter 2. The table below summarises each symptom using counts from `tmt_symptoms_gpt4o.json`. The five new fields (when_to_admit, when_to_refer, treatment_overview, etiology) are included as additional columns; epidemiology is a single string for all 11 symptoms and is not counted here.
 
-| Symptom | Body Systems | Essential Questions | Red Flags | Differentials | Urgency Rules |
-|---|---|---|---|---|---|
-| Cough | Respiratory, Gastrointestinal, Cardiovascular | 5 | 4 | 6 | 3 |
-| Dyspnea | Respiratory, Cardiovascular, Hematologic, Metabolic, Psychiatric | 5 | 4 | 5 | 3 |
-| Hemoptysis | Respiratory, Cardiovascular | 3 | 2 | 4 | 2 |
-| Chest Pain | Cardiovascular, Pulmonary, Gastrointestinal, Musculoskeletal | 5 | 4 | 5 | 3 |
-| Palpitations | Cardiovascular, Endocrine, Psychiatric | 6 | 3 | 4 | 2 |
-| Lower Extremity Edema | Cardiovascular, Lymphatic, Renal, Hepatic, Musculoskeletal, Integumentary | 6 | 2 | 6 | 2 |
-| Fever | Immune, Nervous, Endocrine | 5 | 3 | 3 | 2 |
-| Involuntary Weight Loss | Endocrine, Gastrointestinal, Psychiatric, Oncological | 5 | 2 | 8 | 3 |
-| Fatigue | Endocrine, Cardiovascular, Respiratory, Renal, Hematologic, Neurologic, Psychiatric, Gastrointestinal, Musculoskeletal | 8 | 5 | 6 | 2 |
-| Acute Headache | Neurologic, Cardiovascular, Infectious, Ophthalmologic | 5 | 5 | 5 | 3 |
-| Dysuria | Urinary, Reproductive | 6 | 4 | 5 | 2 |
+| Symptom | Body Systems | Ess. Questions | Red Flags | Differentials | Urgency Rules | Admit | Refer | Treatment | Etiology |
+|---|---|---|---|---|---|---|---|---|---|
+| Cough | Respiratory, Gastrointestinal, Cardiovascular | 5 | 4 | 6 | 3 | 3 | 3 | 4 | 4 |
+| Dyspnea | Respiratory, Cardiovascular, Hematologic, Metabolic, Psychiatric | 5 | 4 | 5 | 3 | 3 | 3 | 4 | 4 |
+| Hemoptysis | Respiratory, Cardiovascular | 3 | 2 | 4 | 2 | 1 | 3 | 4 | 7 |
+| Chest Pain | Cardiovascular, Pulmonary, Gastrointestinal, Musculoskeletal | 5 | 4 | 5 | 3 | 3 | 2 | 3 | 3 |
+| Palpitations | Cardiovascular, Endocrine, Psychiatric | 6 | 3 | 4 | 2 | 1 | 2 | 3 | 4 |
+| Lower Extremity Edema | Cardiovascular, Lymphatic, Renal, Hepatic, Musculoskeletal, Integumentary | 6 | 2 | 6 | 2 | 2 | 3 | 4 | 4 |
+| Fever | Immune, Nervous, Endocrine | 5 | 3 | 3 | 2 | 3 | 2 | 3 | 4 |
+| Involuntary Weight Loss | Endocrine, Gastrointestinal, Psychiatric, Oncological | 5 | 2 | 8 | 3 | 3 | 1 | 7 | 8 |
+| Fatigue | Endocrine, Cardiovascular, Respiratory, Renal, Hematologic, Neurologic, Psychiatric, Gastrointestinal, Musculoskeletal | 8 | 5 | 6 | 2 | 1 | 3 | 5 | 4 |
+| Acute Headache | Neurologic, Cardiovascular, Infectious, Ophthalmologic | 5 | 5 | 5 | 3 | 4 | 1 | 3 | 6 |
+| Dysuria | Urinary, Reproductive | 6 | 4 | 5 | 2 | 7 | 3 | 5 | 4 |
 
 ---
 
@@ -188,6 +210,11 @@ Chest Pain is the most clinically demanding of the comparison symptoms — it sp
 - `key_history_points`: 5 entries covering quality, duration, radiation, precipitants, associated symptoms, and cardiovascular risk factors
 - `key_exam_findings`: 4 entries including pericardial rub, differential blood pressures, and ECG findings
 - `initial_workup`: 4 tests including high-sensitivity troponin and D-dimer
+- `when_to_admit`: 3 — failure to exclude life-threatening causes, high-risk PE with positive D-dimer, abnormal ECG and troponin
+- `when_to_refer`: 2 — poorly controlled noncardiac chest pain to a pain specialist, sickle cell anemia to a hematologist
+- `treatment_overview`: 3 — guided by underlying etiology, high-dose PPI therapy for noncardiac chest pain, cognitive-behavioural interventions for psychological causes
+- `etiology`: 3 — cardiovascular/pulmonary/musculoskeletal/gastrointestinal disorders, anxiety states, cocaine use
+- `epidemiology`: present (string) — notes variability of ACS, aortic dissection, and PE frequency across clinical settings
 
 **Llama 3.1:8b — Chest Pain**
 
@@ -334,7 +361,7 @@ After both models complete, a comparison summary is printed to stdout showing co
 
 **`data/structured_symptoms/tmt_symptoms_gpt4o.json`**
 
-A JSON array of 11 objects, one per symptom. Each object conforms to the 10-field schema described above. This file is the primary artefact consumed by the Intake Agent in Phase 5.
+A JSON array of 11 objects, one per symptom. Each object conforms to the 15-field schema described above. This file is the primary artefact consumed by the Intake Agent in Phase 5.
 
 **`data/structured_symptoms/tmt_symptoms_ollama.json`**
 
