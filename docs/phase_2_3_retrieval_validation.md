@@ -243,6 +243,47 @@ The honest assessment is that Phase 2.3 has found a retrieval baseline that is a
 
 ---
 
+## Sensitivity to k: How Many Chunks to Retrieve?
+
+The parameter k — the number of chunks retrieved per query — directly controls the Triage Agent's context window. A larger k provides more information but introduces noise and increases LLM token cost. A smaller k is cheaper and more focused but risks missing relevant content. The choice of k is not arbitrary; it should be justified empirically.
+
+The validation was run at three values of k (3, 5, and 10) to measure how retrieval quality changes as the context window grows.
+
+### Results Across k Values
+
+| Metric | k=3 | k=5 | k=10 |
+|---|---|---|---|
+| Chapter Hit@1 | 90.0% | 90.0% | 90.0% |
+| Chapter Hit@3 | 100.0% | 100.0% | 100.0% |
+| Chapter Hit@k | 100.0% | 100.0% | 100.0% |
+| Chapter MRR | 0.950 | 0.950 | 0.950 |
+| Section Hit@1 | 81.8% | 81.8% | 81.8% |
+| Section Hit@3 | 100.0% | 100.0% | 100.0% |
+| Section Hit@k | 100.0% | 100.0% | 100.0% |
+| Section MRR | 0.909 | 0.909 | 0.909 |
+
+### Analysis
+
+All metrics are identical across k=3, k=5, and k=10. The retrieval system saturates at k=3: every query that hits at k=3 also hits at k=5 and k=10, and no query that misses at k=3 is recovered by expanding to k=10. This means the embedding model consistently places the most relevant chunks in the top 3 positions, and additional results beyond rank 3 contribute only lower-relevance content.
+
+This saturation is a strong signal about the embedding quality. It indicates that the vector space geometry learned by `embeddinggemma-300m-medical` with the context-prefix strategy is well-calibrated for this corpus — semantically relevant chunks cluster tightly near the query, rather than being scattered across a wider range of ranks.
+
+### Implications for k Selection
+
+The k-sensitivity analysis supports two operational configurations:
+
+**For direct LLM consumption (no reranker): k=3.** Since all relevant content appears in the top 3 results, there is no recall benefit from retrieving more. Passing 3 chunks to the LLM instead of 5 or 10 reduces the context window by 40–70%, which lowers token cost, reduces latency, and — critically — reduces the risk of the LLM being distracted by marginally relevant content. At the chunk sizes produced in Phase 1.2 (50–500 words), k=3 yields approximately 150–1,500 words of context, which is comfortably within any LLM's effective attention window.
+
+**For Phase 3 reranking: retrieve k=10, rerank to top 3.** The reranking architecture retrieves a deliberately wider pool of candidates, then uses a cross-encoder to re-score and select the best 3. Even though k=10 provides no recall advantage on these 20 queries, the wider pool is a safety margin: queries that fall outside the validation set's distribution may have relevant content at ranks 4–10 that the reranker can promote. The 10→3 configuration is standard in production RAG systems and incurs minimal overhead because the cross-encoder only scores 10 candidates per query.
+
+### Why k=5 Is Not the Right Default
+
+The initial validation used k=5 as the default. The k-sensitivity analysis reveals that k=5 is a compromise that serves neither configuration well: it retrieves 2 chunks beyond the saturation point (wasting LLM context) without providing the wider candidate pool that reranking benefits from. The two operationally justified values are k=3 (for direct consumption) and k=10 (for reranking). k=5 exists in the middle without a clear use case.
+
+This finding is methodologically important for the thesis: default parameter values should be validated empirically rather than adopted from convention. The k=5 default was initially chosen because it is a common value in RAG tutorials and documentation. The k-sensitivity analysis demonstrates that the optimal k depends on the specific corpus, embedding model, and downstream consumer — and that in this case, the conventional default is suboptimal.
+
+---
+
 ## How It Works
 
 The `evaluation/retrieval_validation.py` script executes four sequential stages.
