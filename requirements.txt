@@ -1,10 +1,10 @@
 # Phase 1: Data Processing
 PyMuPDF>=1.24.0
 
-# Phase 2: Embeddings & Vector Store (uncomment when needed)
-# sentence-transformers>=3.0.0
-# chromadb>=0.5.0
-# torch>=2.0.0
+# Phase 2: Embeddings & Vector Store
+sentence-transformers>=3.0.0
+chromadb>=0.5.0
+torch>=2.0.0
 
 # Phase 3: Advanced Retrieval (uncomment when needed)
 # ragatouille>=0.0.8  # ColBERT

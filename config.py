@@ -21,7 +21,13 @@ CHUNK_TARGET_WORDS = 200
 BASELINE_CHUNK_WORDS = 200
 BASELINE_OVERLAP_WORDS = 50
 
-# === Model Names (will be updated after Phase 2 comparison) ===
-EMBEDDING_MODEL = "BAAI/bge-m3"
-LLM_MODEL = "openbiollm-8b"  # placeholder — decided after Phase 2
+# === Embedding Parameters ===
+EMBEDDING_MODEL = "sentence-transformers/embeddinggemma-300m-medical"
+EMBEDDING_DIM = 768
+EMBEDDING_BATCH_SIZE = 64
+EMBEDDINGS_DIR = DATA_DIR / "embeddings"
+CHROMA_DIR = DATA_DIR / "chroma"
+
+# === Model Names ===
+LLM_MODEL = "openbiollm-8b"  # placeholder — decided after Phase 3
 RERANKER_MODEL = "mixedbread-ai/mxbai-colbert-large-v1"
