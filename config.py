@@ -31,3 +31,9 @@ CHROMA_DIR = DATA_DIR / "chroma"
 # === Model Names ===
 LLM_MODEL = "openbiollm-8b"  # placeholder — decided after Phase 3
 RERANKER_MODEL = "mixedbread-ai/mxbai-colbert-large-v1"
+RERANKER_BACKEND = "auto"  # auto | ragatouille | cross-encoder
+RERANKER_FALLBACK_MODEL = "BAAI/bge-reranker-v2-m3"
+
+# === Phase 3 Retrieval + Reranking Parameters ===
+RERANK_RETRIEVE_K = 10
+RERANK_FINAL_K = 3

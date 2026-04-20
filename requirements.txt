@@ -6,8 +6,10 @@ sentence-transformers>=3.0.0
 chromadb>=0.5.0
 torch>=2.0.0
 
-# Phase 3: Advanced Retrieval (uncomment when needed)
-# ragatouille>=0.0.8  # ColBERT
+# Phase 3: Advanced Retrieval
+# RAGatouille can fail on Windows/Python 3.13 due to voyager wheels.
+# It is optional because reranking falls back to sentence-transformers CrossEncoder.
+# ragatouille>=0.0.8
 
 # Phase 4: Evaluation (uncomment when needed)
 # ragas>=0.1.0
