@@ -28,6 +28,11 @@ EMBEDDING_BATCH_SIZE = 64
 EMBEDDINGS_DIR = DATA_DIR / "embeddings"
 CHROMA_DIR = DATA_DIR / "chroma"
 
+# === Reranking Parameters ===
+RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"
+RERANKER_COMPARISON_MODEL = "ncbi/MedCPT-Cross-Encoder"
+RERANK_TOP_K_RETRIEVE = 10   # retrieve this many from bi-encoder
+RERANK_TOP_K_RETURN = 3      # return this many after reranking
+
 # === Model Names ===
 LLM_MODEL = "openbiollm-8b"  # placeholder — decided after Phase 3
-RERANKER_MODEL = "mixedbread-ai/mxbai-colbert-large-v1"

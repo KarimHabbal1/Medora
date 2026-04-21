@@ -6,8 +6,9 @@ sentence-transformers>=3.0.0
 chromadb>=0.5.0
 torch>=2.0.0
 
-# Phase 3: Advanced Retrieval (uncomment when needed)
-# ragatouille>=0.0.8  # ColBERT
+# Phase 3: Cross-Encoder Reranking + LLM-as-Judge Evaluation
+openai>=1.0.0
+python-dotenv>=1.0.0
 
 # Phase 4: Evaluation (uncomment when needed)
 # ragas>=0.1.0
