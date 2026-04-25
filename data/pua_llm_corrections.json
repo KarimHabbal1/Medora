@@ -1,0 +1,328 @@
+[
+  {
+    "font": "f145",
+    "original": "hydaidifoxm moly",
+    "corrected": "Hydatidiform mole",
+    "chapter": "Obstetrics & Obstetric Disorders",
+    "section": "Obstetrics & Obstetric Disorders",
+    "page": 825,
+    "context": "DISEASE (Hydatidiform Mole & Choriocarcinoma) ESSENTIALS OF DIAGNOSIS [HERE] hydaidifoxm moly",
+    "residual_chars": [
+      "U+E028"
+    ]
+  },
+  {
+    "font": "f145",
+    "original": "Coxiocaxcinoma",
+    "corrected": "Choriocarcinoma",
+    "chapter": "Obstetrics & Obstetric Disorders",
+    "section": "Obstetrics & Obstetric Disorders",
+    "page": 825,
+    "context": "tous villi per vagina. neous echogenic image and no fetus or placenta. nal origin. [HERE] Coxiocaxcinoma",
+    "residual_chars": [
+      "U+E01F"
+    ]
+  },
+  {
+    "font": "f145",
+    "original": "Gysaional hyyxynsion",
+    "corrected": "Gestational hypertension",
+    "chapter": "Obstetrics & Obstetric Disorders",
+    "section": "Obstetrics & Obstetric Disorders",
+    "page": 827,
+    "context": "SeCOND & thIrD trIMeSterS PREECLAMPSIA-ECLAMPSIA ESSENTIALS OF DIAGNOSIS [HERE] Gysaional hyyxynsion",
+    "residual_chars": [
+      "U+E028",
+      "U+E025"
+    ]
+  },
+  {
+    "font": "f145",
+    "original": "pxyyclamsia",
+    "corrected": "Preeclampsia",
+    "chapter": "Obstetrics & Obstetric Disorders",
+    "section": "Obstetrics & Obstetric Disorders",
+    "page": 827,
+    "context": "ESSENTIALS OF DIAGNOSIS Gysaional hyyxynsion > 90 mm Hg diastolic after 20 weeks’ gestation. [HERE] pxyyclamsia",
+    "residual_chars": [
+      "U+E025"
+    ]
+  },
+  {
+    "font": "f145",
+    "original": "pxyyclamsia wi syvyxy fyauxys",
+    "corrected": "Preeclampsia with severe features",
+    "chapter": "Obstetrics & Obstetric Disorders",
+    "section": "Obstetrics & Obstetric Disorders",
+    "page": 827,
+    "context": "> 90 mm Hg diastolic after 20 weeks’ gestation. pxyyclamsia ≥ 90 mm Hg diastolic after 20 weeks of gestation. [HERE] pxyyclamsia wi syvyxy fyauxys",
+    "residual_chars": [
+      "U+E01F",
+      "U+E028",
+      "U+E025"
+    ]
+  },
+  {
+    "font": "f145",
+    "original": "eclamsia",
+    "corrected": "Eclampsia",
+    "chapter": "Obstetrics & Obstetric Disorders",
+    "section": "Obstetrics & Obstetric Disorders",
+    "page": 827,
+    "context": "(HELLP). of preeclampsia, seizure prophylaxis could be beneficial. [HERE] eclamsia",
+    "residual_chars": [
+      "U+E025"
+    ]
+  },
+  {
+    "font": "f145",
+    "original": "Siy",
+    "corrected": "Site",
+    "chapter": "Obstetrics & Obstetric Disorders",
+    "section": "Obstetrics & Obstetric Disorders",
+    "page": 828,
+    "context": "808 [HERE] Siy",
+    "residual_chars": [
+      "U+E028"
+    ]
+  },
+  {
+    "font": "f145",
+    "original": "Indicaox",
+    "corrected": "Indication",
+    "chapter": "Obstetrics & Obstetric Disorders",
+    "section": "Obstetrics & Obstetric Disorders",
+    "page": 828,
+    "context": "808 [HERE] Indicaox",
+    "residual_chars": [
+      "U+E028"
+    ]
+  },
+  {
+    "font": "f145",
+    "original": "Scxyyning fox gysaional diabyys myllius",
+    "corrected": "Screening for gestational diabetes mellitus",
+    "chapter": "Obstetrics & Obstetric Disorders",
+    "section": "Obstetrics & Obstetric Disorders",
+    "page": 836,
+    "context": "816 Table 19–4.Screening and diagnostic criteria for gestational diabetes mellitus. [HERE] Scxyyning fox gysaional diabyys myllius",
+    "residual_chars": [
+      "U+E028"
+    ]
+  },
+  {
+    "font": "f145",
+    "original": "Diagnosis of gysaional diabyys myllius",
+    "corrected": "Diagnosis of gestational diabetes mellitus",
+    "chapter": "Obstetrics & Obstetric Disorders",
+    "section": "Obstetrics & Obstetric Disorders",
+    "page": 836,
+    "context": "816 Table 19–4.Screening and diagnostic criteria for gestational diabetes mellitus. [HERE] Diagnosis of gysaional diabyys myllius",
+    "residual_chars": [
+      "U+E028"
+    ]
+  },
+  {
+    "font": "f90",
+    "original": "rnl",
+    "corrected": "renal",
+    "chapter": "Mycotic Infections",
+    "section": "HISTOPLASMOSIS",
+    "page": 1576,
+    "context": "1556 CMDT 2022 Table 36–1.Agents for systemic mycoses.* [HERE] rnl",
+    "residual_chars": [
+      "U+E01A",
+      "U+E016"
+    ]
+  },
+  {
+    "font": "f90",
+    "original": "Clrnc?",
+    "corrected": "Clearance",
+    "chapter": "Mycotic Infections",
+    "section": "HISTOPLASMOSIS",
+    "page": 1576,
+    "context": "1556 CMDT 2022 Table 36–1.Agents for systemic mycoses.* [HERE] Clrnc?",
+    "residual_chars": [
+      "U+E01A",
+      "U+E016"
+    ]
+  },
+  {
+    "font": "f90",
+    "original": "polyns",
+    "corrected": "polyenes",
+    "chapter": "Mycotic Infections",
+    "section": "HISTOPLASMOSIS",
+    "page": 1576,
+    "context": "1556 CMDT 2022 Table 36–1.Agents for systemic mycoses.* [HERE] polyns",
+    "residual_chars": [
+      "U+E01A"
+    ]
+  },
+  {
+    "font": "f90",
+    "original": "azols",
+    "corrected": "azoles",
+    "chapter": "Mycotic Infections",
+    "section": "HISTOPLASMOSIS",
+    "page": 1576,
+    "context": "1556 CMDT 2022 Table 36–1.Agents for systemic mycoses.* [HERE] azols",
+    "residual_chars": [
+      "U+E01A"
+    ]
+  },
+  {
+    "font": "f90",
+    "original": "pntrtion?",
+    "corrected": "penetration",
+    "chapter": "Mycotic Infections",
+    "section": "HISTOPLASMOSIS",
+    "page": 1576,
+    "context": "1556 CMDT 2022 Table 36–1.Agents for systemic mycoses.* [HERE] pntrtion?",
+    "residual_chars": [
+      "U+E01A",
+      "U+E016"
+    ]
+  },
+  {
+    "font": "f90",
+    "original": "toxicitis",
+    "corrected": "toxicities",
+    "chapter": "Mycotic Infections",
+    "section": "HISTOPLASMOSIS",
+    "page": 1576,
+    "context": "1556 CMDT 2022 Table 36–1.Agents for systemic mycoses.* [HERE] toxicitis",
+    "residual_chars": [
+      "U+E01A"
+    ]
+  },
+  {
+    "font": "f90",
+    "original": "Sctrum of activity",
+    "corrected": "Spectrum of activity",
+    "chapter": "Mycotic Infections",
+    "section": "HISTOPLASMOSIS",
+    "page": 1576,
+    "context": "1556 CMDT 2022 Table 36–1.Agents for systemic mycoses.* [HERE] Sctrum of activity",
+    "residual_chars": [
+      "U+E01A",
+      "U+E023"
+    ]
+  },
+  {
+    "font": "f90",
+    "original": "rnl",
+    "corrected": "renal",
+    "chapter": "Mycotic Infections",
+    "section": "HISTOPLASMOSIS",
+    "page": 1577,
+    "context": "Table 36–1.Agents for systemic mycoses.* Table 36–1.Agents for systemic mycoses.* (continued) [HERE] rnl",
+    "residual_chars": [
+      "U+E01A",
+      "U+E016"
+    ]
+  },
+  {
+    "font": "f90",
+    "original": "Clrnc?",
+    "corrected": "Clearance",
+    "chapter": "Mycotic Infections",
+    "section": "HISTOPLASMOSIS",
+    "page": 1577,
+    "context": "Table 36–1.Agents for systemic mycoses.* Table 36–1.Agents for systemic mycoses.* (continued) [HERE] Clrnc?",
+    "residual_chars": [
+      "U+E01A",
+      "U+E016"
+    ]
+  },
+  {
+    "font": "f90",
+    "original": "azols (cont.)",
+    "corrected": "azoles (cont.)",
+    "chapter": "Mycotic Infections",
+    "section": "HISTOPLASMOSIS",
+    "page": 1577,
+    "context": "Table 36–1.Agents for systemic mycoses.* Table 36–1.Agents for systemic mycoses.* (continued) [HERE] azols (cont.)",
+    "residual_chars": [
+      "U+E01A"
+    ]
+  },
+  {
+    "font": "f90",
+    "original": "ecinocndins",
+    "corrected": "echinocandins",
+    "chapter": "Mycotic Infections",
+    "section": "HISTOPLASMOSIS",
+    "page": 1577,
+    "context": "Table 36–1.Agents for systemic mycoses.* Table 36–1.Agents for systemic mycoses.* (continued) [HERE] ecinocndins",
+    "residual_chars": [
+      "U+E01D",
+      "U+E016"
+    ]
+  },
+  {
+    "font": "f90",
+    "original": "antimtbolit",
+    "corrected": "antimetabolite",
+    "chapter": "Mycotic Infections",
+    "section": "HISTOPLASMOSIS",
+    "page": 1577,
+    "context": "Table 36–1.Agents for systemic mycoses.* Table 36–1.Agents for systemic mycoses.* (continued) [HERE] antimtbolit",
+    "residual_chars": [
+      "U+E01A",
+      "U+E016"
+    ]
+  },
+  {
+    "font": "f90",
+    "original": "allylmin",
+    "corrected": "allylamine",
+    "chapter": "Mycotic Infections",
+    "section": "HISTOPLASMOSIS",
+    "page": 1577,
+    "context": "Table 36–1.Agents for systemic mycoses.* Table 36–1.Agents for systemic mycoses.* (continued) [HERE] allylmin",
+    "residual_chars": [
+      "U+E01A",
+      "U+E016"
+    ]
+  },
+  {
+    "font": "f90",
+    "original": "pntrtion?",
+    "corrected": "penetration",
+    "chapter": "Mycotic Infections",
+    "section": "HISTOPLASMOSIS",
+    "page": 1577,
+    "context": "1557 CMDT 2022 [HERE] pntrtion?",
+    "residual_chars": [
+      "U+E01A",
+      "U+E016"
+    ]
+  },
+  {
+    "font": "f90",
+    "original": "toxicitis",
+    "corrected": "toxicities",
+    "chapter": "Mycotic Infections",
+    "section": "HISTOPLASMOSIS",
+    "page": 1577,
+    "context": "1557 CMDT 2022 [HERE] toxicitis",
+    "residual_chars": [
+      "U+E01A"
+    ]
+  },
+  {
+    "font": "f90",
+    "original": "Sctrum of activity",
+    "corrected": "Spectrum of activity",
+    "chapter": "Mycotic Infections",
+    "section": "HISTOPLASMOSIS",
+    "page": 1577,
+    "context": "1557 CMDT 2022 [HERE] Sctrum of activity",
+    "residual_chars": [
+      "U+E01A",
+      "U+E023"
+    ]
+  }
+]
