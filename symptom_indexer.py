@@ -305,6 +305,8 @@ from typing import List, Dict, Any
 from dotenv import load_dotenv
 from openai import OpenAI
 import chromadb
+import traceback, sys
+sys.excepthook = lambda t,v,tb: traceback.print_exception(t,v,tb)
 
 # ============================================================
 # ENV + PATH CONFIG
@@ -558,3 +560,4 @@ def build_symptom_index():
 
 if __name__ == "__main__":
     build_symptom_index()
+print("SCRIPT REACHED END")
