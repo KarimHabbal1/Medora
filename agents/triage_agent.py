@@ -340,34 +340,64 @@ def _build_analyze_input_node():
 
 def _build_check_sufficiency_node(llm: ChatOpenAI):
     """
-    Mode A only: After initial retrieval, evaluates whether the intake answers
-    provide enough clinical information for a confident diagnosis. If not,
-    generates 2-3 targeted follow-up questions based on the retrieved evidence.
+    Mode A only: Criteria-based sufficiency check.
+
+    Step 1: Extract diagnostic criteria from the retrieved textbook passages
+            (what information does the textbook say is needed to diagnose?)
+    Step 2: Compare against the intake answers (what do we actually know?)
+    Step 3: Identify specific gaps (which criteria are not covered?)
+    Step 4: Generate follow-up questions targeting those gaps
+
+    This is grounded in the textbook, not LLM judgment.
     """
-    system_prompt = """You are a clinical diagnostician evaluating whether you have enough
-information to make a confident diagnosis.
+    extract_criteria_prompt = """You are a clinical knowledge extraction system.
+From the following medical textbook passages, extract the KEY DIAGNOSTIC CRITERIA —
+the specific clinical findings, history points, and test results that the textbook
+says are needed to differentiate between the likely conditions.
 
+Focus on information from sections like "Essentials of Diagnosis", "Clinical Findings",
+"Symptoms and Signs", and "General Considerations".
+
+Return a JSON array of criteria objects:
+[
+    {
+        "criterion": "specific finding or information needed",
+        "why": "which condition(s) it helps identify or rule out",
+        "category": "history" | "symptom" | "examination" | "investigation"
+    }
+]
+
+Only include criteria that are DIAGNOSTICALLY IMPORTANT — things that would change
+which condition is most likely. Skip generic criteria like "take vital signs."
+Aim for 5-10 key criteria.
+
+Return ONLY valid JSON."""
+
+    gap_analysis_prompt = """You are a clinical gap analysis system.
 Given:
-- A patient's symptoms and their answers to intake questions
-- Retrieved medical textbook passages about relevant conditions
+1. A list of diagnostic criteria needed (from the medical textbook)
+2. What we actually know from the patient's intake answers
 
-Evaluate whether the information is SUFFICIENT for a confident differential diagnosis.
-Information is INSUFFICIENT if:
-- Key differentiating factors are unknown (e.g., onset pattern, specific triggers, relevant history)
-- The textbook passages suggest specific questions that would significantly narrow the differential
-- Critical risk factors haven't been assessed
+Perform a structured comparison:
+- For each criterion, determine if the intake answers COVER it (fully, partially, or not at all)
+- Identify the CRITICAL GAPS — criteria that are not covered and would significantly
+  change the differential diagnosis
 
-Respond with a JSON object:
+Return a JSON object:
 {
+    "covered": [{"criterion": "...", "covered_by": "which answer covers this"}],
+    "gaps": [{"criterion": "...", "why_critical": "how this would change the diagnosis"}],
     "sufficient": true/false,
-    "reason": "brief explanation",
-    "followup_questions": ["question 1", "question 2"] (only if insufficient, 2-3 questions max)
+    "followup_questions": ["patient-friendly question targeting gap 1", "..."]
 }
 
-The follow-up questions should:
-- Target specific information that would help differentiate between likely diagnoses
-- Be in patient-friendly language
-- Focus on what the textbook evidence suggests is most diagnostically useful
+Rules for followup_questions:
+- Only generate questions for CRITICAL gaps (not every gap needs a question)
+- Maximum 3 questions
+- Use patient-friendly language
+- Each question should target a specific missing criterion
+
+If there are no critical gaps, set "sufficient": true and "followup_questions": [].
 
 Return ONLY valid JSON."""
 
@@ -381,33 +411,68 @@ Return ONLY valid JSON."""
         context = _chunks_to_context(retrieved_chunks)
         clinical_context = _build_intake_context_for_prompt(intake_summary)
 
-        response = llm.invoke([
-            SystemMessage(content=system_prompt),
+        # Step 1: Extract diagnostic criteria from textbook passages
+        print("[Triage] Extracting diagnostic criteria from textbook passages...")
+        criteria_response = llm.invoke([
+            SystemMessage(content=extract_criteria_prompt),
+            HumanMessage(content=f"Medical textbook passages:\n\n{context}"),
+        ])
+
+        criteria_raw = _strip_fence(criteria_response.content)
+        try:
+            criteria_list = json.loads(criteria_raw)
+            if not isinstance(criteria_list, list):
+                criteria_list = []
+        except (json.JSONDecodeError, ValueError):
+            criteria_list = []
+
+        if not criteria_list:
+            print("[Triage] Could not extract criteria — proceeding with diagnosis.")
+            return {"info_sufficient": True}
+
+        print(f"[Triage] Extracted {len(criteria_list)} diagnostic criteria.")
+
+        # Step 2 + 3 + 4: Gap analysis — compare criteria against intake answers
+        print("[Triage] Running gap analysis against intake answers...")
+        criteria_json = json.dumps(criteria_list, indent=2)
+
+        gap_response = llm.invoke([
+            SystemMessage(content=gap_analysis_prompt),
             HumanMessage(
                 content=(
-                    f"Patient clinical context:\n{clinical_context}\n\n"
-                    f"Retrieved textbook passages:\n\n{context}"
+                    f"Diagnostic criteria needed:\n{criteria_json}\n\n"
+                    f"Patient's intake information:\n{clinical_context}"
                 )
             ),
         ])
 
-        raw = _strip_fence(response.content)
+        gap_raw = _strip_fence(gap_response.content)
         try:
-            parsed = json.loads(raw)
-            is_sufficient = parsed.get("sufficient", True)
-            followups = parsed.get("followup_questions", []) if not is_sufficient else []
+            gap_result = json.loads(gap_raw)
+            is_sufficient = gap_result.get("sufficient", True)
+            covered = gap_result.get("covered", [])
+            gaps = gap_result.get("gaps", [])
+            followups = gap_result.get("followup_questions", []) if not is_sufficient else []
         except (json.JSONDecodeError, ValueError):
             is_sufficient = True
+            covered = []
+            gaps = []
             followups = []
+
+        # Log the analysis
+        print(f"[Triage] Criteria covered: {len(covered)}, Gaps identified: {len(gaps)}")
+        if gaps:
+            for g in gaps:
+                print(f"  GAP: {g.get('criterion', '?')} — {g.get('why_critical', '?')}")
 
         if is_sufficient or not followups:
             print("[Triage] Information sufficient for diagnosis.")
             return {"info_sufficient": True}
 
-        print(f"[Triage] Information insufficient — generating {len(followups)} follow-up question(s).")
+        print(f"[Triage] {len(gaps)} critical gap(s) found — generating {len(followups)} follow-up question(s).")
         return {
             "info_sufficient": False,
-            "followup_questions": followups,
+            "followup_questions": followups[:3],  # hard cap at 3
             "followup_answers": {},
             "followup_question_idx": 0,
             "followup_phase": True,
