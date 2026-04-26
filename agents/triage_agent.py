@@ -1261,24 +1261,6 @@ class TriageSession:
             dict: the diagnosis if completed in one pass
             str: the first follow-up question if more info needed
         """
-        urgency = intake_summary.get("urgency", "routine").lower()
-
-        # Emergency guard
-        if urgency == "emergency":
-            self._phase = "done"
-            diag = {
-                "report": (
-                    "Emergency case — patient has been directed to emergency services. "
-                    "Triage Agent defers."
-                ),
-                "mode": "common",
-                "pass": 0,
-                "num_chunks_used": 0,
-                "deferred": True,
-            }
-            self._state["diagnosis"] = diag
-            return diag
-
         self._state = self._empty_state()
         self._state["intake_summary"] = intake_summary
         self._state["mode"] = "common"
