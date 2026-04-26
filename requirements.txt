@@ -16,3 +16,7 @@ python-dotenv>=1.0.0
 # Phase 5: Agents (uncomment when needed)
 # langgraph>=0.2.0
 # langchain>=0.3.0
+
+# Phase 6: Privacy-safe web evidence fetching
+requests>=2.31.0
+beautifulsoup4>=4.12.0
