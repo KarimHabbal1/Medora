@@ -89,6 +89,13 @@ class TriageState(TypedDict):
     refinement_reason: str          # why Pass 3 was triggered
     refinement_search_query: str    # targeted query for Pass 3
 
+    # Mode A follow-up tracking (when intake answers are insufficient)
+    info_sufficient: bool           # True if intake answers are enough for diagnosis
+    followup_questions: list[str]   # additional questions for Mode A
+    followup_answers: dict          # follow-up question → answer
+    followup_question_idx: int      # index into followup_questions
+    followup_phase: bool            # True when in Mode A follow-up questioning
+
     # Output
     diagnosis: dict                 # the final diagnosis report
     diagnosis_complete: bool
@@ -331,6 +338,128 @@ def _build_analyze_input_node():
     return analyze_input
 
 
+def _build_check_sufficiency_node(llm: ChatOpenAI):
+    """
+    Mode A only: After initial retrieval, evaluates whether the intake answers
+    provide enough clinical information for a confident diagnosis. If not,
+    generates 2-3 targeted follow-up questions based on the retrieved evidence.
+    """
+    system_prompt = """You are a clinical diagnostician evaluating whether you have enough
+information to make a confident diagnosis.
+
+Given:
+- A patient's symptoms and their answers to intake questions
+- Retrieved medical textbook passages about relevant conditions
+
+Evaluate whether the information is SUFFICIENT for a confident differential diagnosis.
+Information is INSUFFICIENT if:
+- Key differentiating factors are unknown (e.g., onset pattern, specific triggers, relevant history)
+- The textbook passages suggest specific questions that would significantly narrow the differential
+- Critical risk factors haven't been assessed
+
+Respond with a JSON object:
+{
+    "sufficient": true/false,
+    "reason": "brief explanation",
+    "followup_questions": ["question 1", "question 2"] (only if insufficient, 2-3 questions max)
+}
+
+The follow-up questions should:
+- Target specific information that would help differentiate between likely diagnoses
+- Be in patient-friendly language
+- Focus on what the textbook evidence suggests is most diagnostically useful
+
+Return ONLY valid JSON."""
+
+    def check_sufficiency(state: TriageState) -> dict:
+        mode = state.get("mode", "uncommon")
+        if mode != "common":
+            return {"info_sufficient": True}
+
+        intake_summary = state.get("intake_summary") or {}
+        retrieved_chunks = state.get("retrieved_chunks", [])
+        context = _chunks_to_context(retrieved_chunks)
+        clinical_context = _build_intake_context_for_prompt(intake_summary)
+
+        response = llm.invoke([
+            SystemMessage(content=system_prompt),
+            HumanMessage(
+                content=(
+                    f"Patient clinical context:\n{clinical_context}\n\n"
+                    f"Retrieved textbook passages:\n\n{context}"
+                )
+            ),
+        ])
+
+        raw = _strip_fence(response.content)
+        try:
+            parsed = json.loads(raw)
+            is_sufficient = parsed.get("sufficient", True)
+            followups = parsed.get("followup_questions", []) if not is_sufficient else []
+        except (json.JSONDecodeError, ValueError):
+            is_sufficient = True
+            followups = []
+
+        if is_sufficient or not followups:
+            print("[Triage] Information sufficient for diagnosis.")
+            return {"info_sufficient": True}
+
+        print(f"[Triage] Information insufficient — generating {len(followups)} follow-up question(s).")
+        return {
+            "info_sufficient": False,
+            "followup_questions": followups,
+            "followup_answers": {},
+            "followup_question_idx": 0,
+            "followup_phase": True,
+        }
+
+    return check_sufficiency
+
+
+def _build_ask_followup_mode_a_node():
+    """Mode A follow-up: asks the next follow-up question."""
+    def ask_followup_mode_a(state: TriageState) -> dict:
+        questions = state.get("followup_questions", [])
+        idx = state.get("followup_question_idx", 0)
+
+        if idx >= len(questions):
+            return {"followup_phase": False}
+
+        question = questions[idx]
+        print(f"\n[Triage] Follow-up question {idx + 1}/{len(questions)}: {question}")
+        return {"messages": [AIMessage(content=question)]}
+
+    return ask_followup_mode_a
+
+
+def _build_process_followup_answer_node():
+    """Mode A follow-up: records the patient's answer to a follow-up question."""
+    def process_followup_answer(state: TriageState) -> dict:
+        human_msgs = [m for m in state["messages"] if isinstance(m, HumanMessage)]
+        if not human_msgs:
+            return {}
+
+        answer = human_msgs[-1].content
+        questions = state.get("followup_questions", [])
+        idx = state.get("followup_question_idx", 0)
+        followup_answers = dict(state.get("followup_answers", {}))
+
+        if idx < len(questions):
+            followup_answers[questions[idx]] = answer
+            print(f"[Triage] Recorded follow-up answer {idx + 1}/{len(questions)}.")
+
+        next_idx = idx + 1
+        all_done = next_idx >= len(questions)
+
+        return {
+            "followup_answers": followup_answers,
+            "followup_question_idx": next_idx,
+            "followup_phase": not all_done,
+        }
+
+    return process_followup_answer
+
+
 def _build_retrieve_evidence_node(collection, bi_encoder, reranker, retrieve_k: int, return_k: int):
     """
     Runs RAG: bi-encoder retrieval → cross-encoder reranking.
@@ -539,8 +668,15 @@ def _build_generate_diagnosis_node(llm: ChatOpenAI):
 
         if mode == "common":
             clinical_context = _build_intake_context_for_prompt(intake_summary or {})
+            # Include follow-up answers if any were collected
+            followup_answers = state.get("followup_answers", {})
+            followup_block = ""
+            if followup_answers:
+                followup_block = "\n\nAdditional follow-up answers:\n" + "\n".join(
+                    f"  Q: {q}\n  A: {a}" for q, a in followup_answers.items()
+                )
             user_content = (
-                f"Patient clinical context:\n{clinical_context}\n\n"
+                f"Patient clinical context:\n{clinical_context}{followup_block}\n\n"
                 f"Retrieved medical textbook passages:\n\n{context}"
             )
         else:
@@ -597,6 +733,9 @@ def _build_graph(
 
     analyze_input_fn = _build_analyze_input_node()
     retrieve_evidence_fn = _build_retrieve_evidence_node(collection, bi_encoder, reranker, retrieve_k, return_k)
+    check_sufficiency_fn = _build_check_sufficiency_node(llm)
+    ask_followup_mode_a_fn = _build_ask_followup_mode_a_node()
+    process_followup_answer_fn = _build_process_followup_answer_node()
     generate_questions_fn = _build_generate_questions_node(llm)
     ask_question_fn = _build_ask_question_node()
     process_answer_fn = _build_process_answer_node()
@@ -613,13 +752,27 @@ def _build_graph(
         current_pass = state.get("current_pass", 1)
 
         if mode == "common":
-            return "generate_diagnosis"
+            return "check_sufficiency"
 
         # Mode B
         if current_pass == 1:
             return "generate_questions"
         # Pass 2 or 3 — generate diagnosis
         return "generate_diagnosis"
+
+    def route_after_sufficiency(state: TriageState) -> str:
+        if state.get("info_sufficient", True):
+            return "generate_diagnosis"
+        return "ask_followup_mode_a"
+
+    def route_after_ask_followup_mode_a(state: TriageState) -> str:
+        return END  # pause for user input
+
+    def route_after_process_followup(state: TriageState) -> str:
+        if state.get("followup_phase", False):
+            return "ask_followup_mode_a"
+        # All follow-ups answered — do a second retrieval with enriched context, then diagnose
+        return "retrieve_evidence_enriched"
 
     def route_after_questions(state: TriageState) -> str:
         return "ask_question"
@@ -694,6 +847,35 @@ def _build_graph(
         result = generate_diagnosis_fn(updated)
         return {**result, "diagnosis_complete": True}
 
+    # Mode A sufficiency check + follow-up nodes
+    graph.add_node("check_sufficiency", check_sufficiency_fn)
+    graph.add_node("ask_followup_mode_a", ask_followup_mode_a_fn)
+    graph.add_node("process_followup_answer", process_followup_answer_fn)
+
+    def retrieve_evidence_enriched(state: TriageState) -> dict:
+        """Re-retrieve with enriched context (intake answers + follow-up answers)."""
+        intake_summary = state.get("intake_summary") or {}
+        followup_answers = state.get("followup_answers", {})
+        # Build an enriched query combining original intake + follow-ups
+        base_query = _build_mode_a_query(intake_summary)
+        followup_context = " ".join(f"{q}: {a}" for q, a in followup_answers.items())
+        enriched_query = f"{base_query} Additional context: {followup_context}"
+
+        print(f"\n[Triage] Re-retrieving with enriched context (follow-up answers included)...")
+        print(f"[Triage] Query: {enriched_query[:120]}{'...' if len(enriched_query) > 120 else ''}")
+
+        existing_chunks = state.get("retrieved_chunks", [])
+        new_chunks = retrieve_and_rerank(
+            enriched_query, collection, bi_encoder, reranker, retrieve_k, return_k
+        )
+        seen_ids: set[str] = {c.get("chunk_id", "") for c in existing_chunks}
+        all_chunks, _ = _deduplicate_chunks(existing_chunks, new_chunks, seen_ids)
+        print(f"[Triage] Retrieved {len(new_chunks)} chunks, total unique: {len(all_chunks)}")
+        return {"retrieved_chunks": all_chunks}
+
+    graph.add_node("retrieve_evidence_enriched", retrieve_evidence_enriched)
+
+    # Mode B nodes
     graph.add_node("generate_questions", generate_questions_fn)
     graph.add_node("ask_question", ask_question_fn)
     graph.add_node("process_answer", process_answer_fn)
@@ -718,12 +900,37 @@ def _build_graph(
         "retrieve_evidence",
         route_after_retrieve,
         {
+            "check_sufficiency": "check_sufficiency",
             "generate_diagnosis": "generate_diagnosis",
             "generate_questions": "generate_questions",
         },
     )
 
-    # Mode A path
+    # Mode A sufficiency check path
+    graph.add_conditional_edges(
+        "check_sufficiency",
+        route_after_sufficiency,
+        {
+            "generate_diagnosis": "generate_diagnosis",
+            "ask_followup_mode_a": "ask_followup_mode_a",
+        },
+    )
+
+    # Mode A follow-up path
+    graph.add_edge("ask_followup_mode_a", END)  # pause for user input
+
+    graph.add_conditional_edges(
+        "process_followup_answer",
+        route_after_process_followup,
+        {
+            "ask_followup_mode_a": "ask_followup_mode_a",
+            "retrieve_evidence_enriched": "retrieve_evidence_enriched",
+        },
+    )
+
+    graph.add_edge("retrieve_evidence_enriched", "generate_diagnosis")
+
+    # Mode A direct diagnosis path (when sufficient)
     graph.add_edge("generate_diagnosis", END)
 
     # Mode B Pass 1 path
@@ -837,6 +1044,11 @@ class TriageSession:
             "needs_refinement": False,
             "refinement_reason": "",
             "refinement_search_query": "",
+            "info_sufficient": True,
+            "followup_questions": [],
+            "followup_answers": {},
+            "followup_question_idx": 0,
+            "followup_phase": False,
             "diagnosis": {},
             "diagnosis_complete": False,
         }
@@ -847,18 +1059,24 @@ class TriageSession:
                 return msg.content
         return ""
 
-    def diagnose_from_intake(self, intake_summary: dict) -> dict:
+    def diagnose_from_intake(self, intake_summary: dict) -> dict | str:
         """
-        Mode A: common symptoms. Single-pass RAG → diagnosis.
-        Non-interactive — returns the diagnosis dict directly.
+        Mode A: common symptoms. Runs RAG → sufficiency check → diagnosis.
 
-        Returns the diagnosis dict with at least a "report" key.
+        If intake answers are sufficient: produces diagnosis directly (non-interactive).
+        If insufficient: returns the first follow-up question as a string.
+        Caller should then use respond_followup() for each answer.
+
+        Returns:
+            dict: the diagnosis if completed in one pass
+            str: the first follow-up question if more info needed
         """
         urgency = intake_summary.get("urgency", "routine").lower()
 
         # Emergency guard
         if urgency == "emergency":
-            return {
+            self._phase = "done"
+            diag = {
                 "report": (
                     "Emergency case — patient has been directed to emergency services. "
                     "Triage Agent defers."
@@ -868,6 +1086,8 @@ class TriageSession:
                 "num_chunks_used": 0,
                 "deferred": True,
             }
+            self._state["diagnosis"] = diag
+            return diag
 
         self._state = self._empty_state()
         self._state["intake_summary"] = intake_summary
@@ -879,6 +1099,64 @@ class TriageSession:
             {"recursion_limit": 20},
         )
         self._state.update(result)
+
+        # Check if the graph paused for follow-up questions
+        if not self._state.get("info_sufficient", True) and self._state.get("followup_questions"):
+            self._phase = "followup"
+            return self._last_ai_text()
+
+        self._phase = "done"
+        return self._state.get("diagnosis", {})
+
+    def respond_followup(self, patient_answer: str) -> dict | str:
+        """
+        Mode A follow-up: process patient's answer to a follow-up question.
+
+        Returns:
+            str: next follow-up question if more remain
+            dict: the diagnosis when all follow-ups answered and diagnosis generated
+        """
+        if self._phase == "done":
+            return self._state.get("diagnosis", {})
+
+        self._state["messages"].append(HumanMessage(content=patient_answer))
+
+        # Process the follow-up answer
+        process_fn = _build_process_followup_answer_node()
+        updates = process_fn(self._state)
+        self._state.update(updates)
+
+        if self._state.get("followup_phase", False):
+            # More follow-up questions remain
+            ask_fn = _build_ask_followup_mode_a_node()
+            ask_updates = ask_fn(self._state)
+            self._state.update(ask_updates)
+            return self._last_ai_text()
+
+        # All follow-ups answered — re-retrieve with enriched context and diagnose
+        print("\n[Triage] All follow-up questions answered. Re-retrieving and diagnosing...")
+
+        # Enriched retrieval
+        intake_summary = self._state.get("intake_summary") or {}
+        followup_answers = self._state.get("followup_answers", {})
+        base_query = _build_mode_a_query(intake_summary)
+        followup_context = " ".join(f"{q}: {a}" for q, a in followup_answers.items())
+        enriched_query = f"{base_query} Additional context: {followup_context}"
+
+        new_chunks = retrieve_and_rerank(
+            enriched_query, self._collection, self._bi_encoder,
+            self._reranker, self._retrieve_k, self._return_k
+        )
+        existing_chunks = self._state.get("retrieved_chunks", [])
+        seen_ids = {c.get("chunk_id", "") for c in existing_chunks}
+        all_chunks, _ = _deduplicate_chunks(existing_chunks, new_chunks, seen_ids)
+        self._state["retrieved_chunks"] = all_chunks
+
+        # Generate diagnosis with full context
+        diagnosis_fn = _build_generate_diagnosis_node(self._llm)
+        diag_updates = diagnosis_fn(self._state)
+        self._state.update(diag_updates)
+        self._state["diagnosis_complete"] = True
         self._phase = "done"
 
         return self._state.get("diagnosis", {})

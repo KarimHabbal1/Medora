@@ -1232,8 +1232,38 @@ def main() -> None:
         response = session.respond(user_input)
         print(f"\nAgent: {response}\n")
 
-    # ── Post-session summary ──────────────────────────────────────────────────
-    if session.is_complete():
+    # ── Post-session: route to Triage Agent ─────────────────────────────────
+    if not session.is_complete():
+        return
+
+    if session.is_uncommon():
+        # Uncommon symptom → Triage Agent Mode B (interactive)
+        print("\n" + "=" * 50)
+        print("  Routing to Triage Agent (uncommon symptom)...")
+        print("=" * 50 + "\n")
+
+        from agents.triage_agent import TriageSession as TriageSessionCls
+        triage = TriageSessionCls(llm_model=args.model)
+        raw_complaint = session.get_raw_complaint()
+        triage_response = triage.start_uncommon(raw_complaint)
+        print(f"Agent: {triage_response}\n")
+
+        while not triage.is_complete():
+            try:
+                user_input = input("You: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print("\n\nSession interrupted.\n")
+                break
+            if user_input.lower() in ("quit", "exit", "q"):
+                print("\nGoodbye.\n")
+                break
+            if not user_input:
+                continue
+            triage_response = triage.respond(user_input)
+            print(f"\nAgent: {triage_response}\n")
+
+    else:
+        # Common symptom → show intake summary, then Triage Agent Mode A
         summary = session.get_summary()
         print("\n" + "=" * 50)
         print("Intake complete.")
@@ -1246,7 +1276,55 @@ def main() -> None:
             print(f"  Red Flags : {len(red_flags)} triggered")
             for rf in red_flags:
                 print(f"    - {rf.get('flag', '')} [{rf.get('urgency', '')}]")
-        print("=" * 50 + "\n")
+        print("=" * 50)
+
+        if summary.get("escalated"):
+            print("\n  EMERGENCY — Patient directed to emergency services.")
+            print("  Triage Agent not invoked.\n")
+        else:
+            print("\n  Routing to Triage Agent for diagnosis...\n")
+            from agents.triage_agent import TriageSession as TriageSessionCls
+            triage = TriageSessionCls(llm_model=args.model)
+            result = triage.diagnose_from_intake(summary)
+
+            # Handle follow-up questions if info was insufficient
+            if isinstance(result, str):
+                print(f"\nAgent: {result}\n")
+                while not triage.is_complete():
+                    try:
+                        user_input = input("You: ").strip()
+                    except (EOFError, KeyboardInterrupt):
+                        print("\n\nSession interrupted.\n")
+                        break
+                    if user_input.lower() in ("quit", "exit", "q"):
+                        print("\nGoodbye.\n")
+                        break
+                    if not user_input:
+                        continue
+                    followup_result = triage.respond_followup(user_input)
+                    if isinstance(followup_result, str):
+                        print(f"\nAgent: {followup_result}\n")
+                    else:
+                        # Diagnosis produced
+                        _print_diagnosis(followup_result)
+            else:
+                # Diagnosis produced directly (info was sufficient)
+                _print_diagnosis(result)
+
+
+def _print_diagnosis(diagnosis: dict) -> None:
+    """Print the triage agent's diagnosis report."""
+    report = diagnosis.get("report", "")
+    mode = diagnosis.get("mode", "unknown")
+    pass_num = diagnosis.get("pass", 0)
+    chunks = diagnosis.get("num_chunks_used", 0)
+
+    print(f"\n{'='*60}")
+    print(f"  TRIAGE AGENT — DIAGNOSIS REPORT")
+    print(f"{'='*60}")
+    print(f"  Mode: {mode.upper()}  |  Pass: {pass_num}  |  Chunks used: {chunks}")
+    print(f"{'='*60}\n")
+    print(report)
 
 
 if __name__ == "__main__":
