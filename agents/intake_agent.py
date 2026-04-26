@@ -1302,9 +1302,9 @@ def main() -> None:
                 print(f"    - {rf.get('flag', '')} [{rf.get('urgency', '')}]")
         print("=" * 50)
 
-        if summary.get("escalated") or summary.get("urgency", "").lower() == "emergency":
-            print("\n  EMERGENCY — Patient should seek immediate medical attention.")
-            print("  Triage Agent not invoked for emergency cases.\n")
+        if summary.get("escalated"):
+            print("\n  EMERGENCY ESCALATION — Patient directed to call 911.")
+            print("  Triage Agent not invoked (escalated mid-conversation).\n")
         else:
             print("\n  Routing to Triage Agent for diagnosis...\n")
             from agents.triage_agent import TriageSession as TriageSessionCls
