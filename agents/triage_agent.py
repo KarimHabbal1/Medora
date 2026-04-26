@@ -74,7 +74,8 @@ class TriageState(TypedDict):
 
     # Input context
     mode: str                       # "common" or "uncommon"
-    intake_summary: dict | None     # from Intake Agent (Mode A)
+    intake_summary: dict | None     # raw from Intake Agent (Mode A) — kept for reference
+    clinical_picture: dict | None   # parsed clean version of intake_summary
     raw_complaint: str              # raw patient text (Mode B)
 
     # RAG results
@@ -239,20 +240,107 @@ def _deduplicate_chunks(
     return result, seen_ids
 
 
-def _build_mode_a_query(intake_summary: dict) -> str:
-    """Build a comprehensive clinical query from an intake summary."""
-    symptoms = intake_summary.get("symptoms", [])
+def parse_intake_to_clinical_picture(intake_summary: dict, llm: ChatOpenAI) -> dict:
+    """
+    Distill a raw intake summary into a clean clinical picture.
+
+    Strips out conversation artifacts (question text, clinician note, specialty routing,
+    workup lists) and produces a structured clinical picture with key-value pairs
+    that the Triage Agent can reason over.
+
+    Returns:
+        {
+            "symptoms": ["Chest Pain", "Hemoptysis"],
+            "urgency": "urgent",
+            "clinical_findings": {
+                "pain_quality": "extremely tight",
+                "pain_radiation": "arms",
+                ...
+            },
+            "red_flags": [{"flag": "...", "urgency": "..."}]
+        }
+    """
+    system_prompt = """You are a clinical data parser. Given a set of intake question-answer pairs
+from a patient interview, extract and organize the clinical information into a clean
+structured format.
+
+Rules:
+- Strip out the question text — only keep the clinical information from the answers
+- Use short, descriptive keys (e.g., "pain_quality", "onset", "smoking_history")
+- Combine related information (if the patient gave follow-up details, merge them)
+- Remove redundant information (if the same fact appears in multiple answers, keep it once)
+- Keep the clinical meaning intact — do not interpret or diagnose, just organize
+
+Return a JSON object with descriptive keys and concise values.
+For example:
+{
+    "onset": "1 week ago, sudden worsening 2 days ago",
+    "pain_quality": "extremely tight",
+    "pain_radiation": "bilateral arms",
+    "triggers": "exercise worsens",
+    "associated_symptoms": "shortness of breath, hemoptysis",
+    "cardiovascular_history": "previous stroke (5 years ago)",
+    "smoking_history": "10 years, quit 2 years ago"
+}
+
+Return ONLY valid JSON."""
+
     answers = intake_summary.get("answers", {})
-    red_flags = intake_summary.get("triggered_red_flags", [])
-    urgency = intake_summary.get("urgency", "routine")
+
+    if not answers:
+        return {
+            "symptoms": intake_summary.get("symptoms", []),
+            "urgency": intake_summary.get("urgency", "routine"),
+            "clinical_findings": {},
+            "red_flags": intake_summary.get("triggered_red_flags", []),
+        }
+
+    answers_text = "\n".join(f"Q: {q}\nA: {a}" for q, a in answers.items())
+
+    response = llm.invoke([
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=f"Intake Q&A pairs:\n\n{answers_text}"),
+    ])
+
+    raw = _strip_fence(response.content)
+    try:
+        clinical_findings = json.loads(raw)
+        if not isinstance(clinical_findings, dict):
+            clinical_findings = {}
+    except (json.JSONDecodeError, ValueError):
+        clinical_findings = {}
+
+    # Only keep red flag name and urgency — strip implications (the Triage Agent
+    # will form its own clinical reasoning)
+    clean_red_flags = [
+        {"flag": rf.get("flag", ""), "urgency": rf.get("urgency", "routine")}
+        for rf in intake_summary.get("triggered_red_flags", [])
+        if rf.get("flag")
+    ]
+
+    return {
+        "symptoms": intake_summary.get("symptoms", []),
+        "urgency": intake_summary.get("urgency", "routine"),
+        "clinical_findings": clinical_findings,
+        "red_flags": clean_red_flags,
+    }
+
+
+def _clinical_picture_to_query(clinical_picture: dict) -> str:
+    """Build a RAG query from a parsed clinical picture."""
+    symptoms = clinical_picture.get("symptoms", [])
+    urgency = clinical_picture.get("urgency", "routine")
+    findings = clinical_picture.get("clinical_findings", {})
+    red_flags = clinical_picture.get("red_flags", [])
 
     symptom_str = ", ".join(symptoms) if symptoms else "unspecified complaint"
     parts = [f"Patient presenting with: {symptom_str}. Urgency: {urgency}."]
 
-    if answers:
-        parts.append("Clinical history:")
-        for q, a in answers.items():
-            parts.append(f"  - {q}: {a}")
+    if findings:
+        parts.append("Clinical findings:")
+        for key, value in findings.items():
+            label = key.replace("_", " ")
+            parts.append(f"  - {label}: {value}")
 
     if red_flags:
         flag_names = [rf.get("flag", "") for rf in red_flags if rf.get("flag")]
@@ -260,6 +348,35 @@ def _build_mode_a_query(intake_summary: dict) -> str:
             parts.append(f"Red flags present: {', '.join(flag_names)}.")
 
     return " ".join(parts)
+
+
+def _clinical_picture_to_context(clinical_picture: dict) -> str:
+    """Format a clinical picture for injection into LLM prompts."""
+    symptoms = clinical_picture.get("symptoms", [])
+    urgency = clinical_picture.get("urgency", "routine")
+    findings = clinical_picture.get("clinical_findings", {})
+    red_flags = clinical_picture.get("red_flags", [])
+
+    lines = [
+        f"Presenting symptoms: {', '.join(symptoms) if symptoms else 'N/A'}",
+        f"Urgency level: {urgency.upper()}",
+        "",
+        "Clinical findings:",
+    ]
+    if findings:
+        for key, value in findings.items():
+            label = key.replace("_", " ").title()
+            lines.append(f"  {label}: {value}")
+    else:
+        lines.append("  (none recorded)")
+
+    if red_flags:
+        lines.append("")
+        lines.append("Red flags:")
+        for rf in red_flags:
+            lines.append(f"  - {rf.get('flag', '')} [{rf.get('urgency', '')}]")
+
+    return "\n".join(lines)
 
 
 def _build_pass2_query(raw_complaint: str, patient_answers: dict) -> str:
@@ -272,57 +389,35 @@ def _build_pass2_query(raw_complaint: str, patient_answers: dict) -> str:
     return " ".join(parts)
 
 
-def _build_intake_context_for_prompt(intake_summary: dict) -> str:
-    """Format the full intake context for injection into the diagnosis prompt."""
-    symptoms = intake_summary.get("symptoms", [])
-    urgency = intake_summary.get("urgency", "routine")
-    answers = intake_summary.get("answers", {})
-    red_flags = intake_summary.get("triggered_red_flags", [])
-
-    lines = [
-        f"Presenting symptoms: {', '.join(symptoms) if symptoms else 'N/A'}",
-        f"Urgency level: {urgency.upper()}",
-        "",
-        "Clinical history (intake Q&A):",
-    ]
-    if answers:
-        for q, a in answers.items():
-            lines.append(f"  Q: {q}")
-            lines.append(f"  A: {a}")
-    else:
-        lines.append("  (no answers recorded)")
-
-    if red_flags:
-        lines.append("")
-        lines.append("Triggered red flags:")
-        for rf in red_flags:
-            flag = rf.get("flag", "")
-            urg = rf.get("urgency", "")
-            lines.append(f"  - {flag} [{urg}]")
-
-    return "\n".join(lines)
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Node builders
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _build_analyze_input_node():
+def _build_analyze_input_node(llm: ChatOpenAI):
     """
-    Determines mode from state. Formats intake data for common mode.
-    Does not call the LLM — pure state logic.
+    Determines mode from state. For common mode, parses the raw intake
+    summary into a clean clinical picture (stripping question text,
+    clinician notes, and other artifacts).
     """
     def analyze_input(state: TriageState) -> dict:
         intake_summary = state.get("intake_summary")
         raw_complaint = state.get("raw_complaint", "")
 
+        clinical_picture = None
         if intake_summary and intake_summary.get("answers"):
             mode = "common"
+            print("[Triage] Parsing intake summary into clean clinical picture...")
+            clinical_picture = parse_intake_to_clinical_picture(intake_summary, llm)
+            findings = clinical_picture.get("clinical_findings", {})
+            print(f"[Triage] Extracted {len(findings)} clinical findings:")
+            for key, value in findings.items():
+                print(f"  {key}: {value}")
         else:
             mode = "uncommon"
 
         return {
             "mode": mode,
+            "clinical_picture": clinical_picture,
             "current_pass": 1,
             "retrieved_chunks": [],
             "generated_questions": [],
@@ -428,10 +523,10 @@ Return ONLY valid JSON."""
         if mode != "common":
             return {"info_sufficient": True}
 
-        intake_summary = state.get("intake_summary") or {}
+        clinical_picture = state.get("clinical_picture") or {}
         retrieved_chunks = state.get("retrieved_chunks", [])
         context = _chunks_to_context(retrieved_chunks)
-        clinical_context = _build_intake_context_for_prompt(intake_summary)
+        clinical_context = _clinical_picture_to_context(clinical_picture)
 
         # Step 1: Extract diagnostic criteria from textbook passages
         print("[Triage] Extracting diagnostic criteria from textbook passages...")
@@ -570,8 +665,9 @@ def _build_retrieve_evidence_node(collection, bi_encoder, reranker, retrieve_k: 
         existing_chunks = state.get("retrieved_chunks", [])
 
         # Build the query based on mode and pass
+        clinical_picture = state.get("clinical_picture")
         if mode == "common":
-            query = _build_mode_a_query(intake_summary or {})
+            query = _clinical_picture_to_query(clinical_picture or {})
         elif current_pass == 1:
             query = raw_complaint
         elif current_pass == 2:
@@ -761,13 +857,13 @@ def _build_generate_diagnosis_node(llm: ChatOpenAI):
         context = _chunks_to_context(retrieved_chunks)
 
         if mode == "common":
-            clinical_context = _build_intake_context_for_prompt(intake_summary or {})
-            # Include follow-up answers if any were collected
+            clinical_picture = state.get("clinical_picture") or {}
+            clinical_context = _clinical_picture_to_context(clinical_picture)
             followup_answers = state.get("followup_answers", {})
             followup_block = ""
             if followup_answers:
-                followup_block = "\n\nAdditional follow-up answers:\n" + "\n".join(
-                    f"  Q: {q}\n  A: {a}" for q, a in followup_answers.items()
+                followup_block = "\n\nAdditional follow-up findings:\n" + "\n".join(
+                    f"  {q}: {a}" for q, a in followup_answers.items()
                 )
             user_content = (
                 f"Patient clinical context:\n{clinical_context}{followup_block}\n\n"
@@ -825,7 +921,7 @@ def _build_graph(
 ) -> object:
     """Build and compile the LangGraph triage workflow."""
 
-    analyze_input_fn = _build_analyze_input_node()
+    analyze_input_fn = _build_analyze_input_node(llm)
     retrieve_evidence_fn = _build_retrieve_evidence_node(collection, bi_encoder, reranker, retrieve_k, return_k)
     check_sufficiency_fn = _build_check_sufficiency_node(llm)
     ask_followup_mode_a_fn = _build_ask_followup_mode_a_node()
@@ -947,11 +1043,10 @@ def _build_graph(
     graph.add_node("process_followup_answer", process_followup_answer_fn)
 
     def retrieve_evidence_enriched(state: TriageState) -> dict:
-        """Re-retrieve with enriched context (intake answers + follow-up answers)."""
-        intake_summary = state.get("intake_summary") or {}
+        """Re-retrieve with enriched context (clinical picture + follow-up answers)."""
+        clinical_picture = state.get("clinical_picture") or {}
         followup_answers = state.get("followup_answers", {})
-        # Build an enriched query combining original intake + follow-ups
-        base_query = _build_mode_a_query(intake_summary)
+        base_query = _clinical_picture_to_query(clinical_picture)
         followup_context = " ".join(f"{q}: {a}" for q, a in followup_answers.items())
         enriched_query = f"{base_query} Additional context: {followup_context}"
 
@@ -1129,6 +1224,7 @@ class TriageSession:
             "messages": [],
             "mode": "uncommon",
             "intake_summary": None,
+            "clinical_picture": None,
             "raw_complaint": "",
             "retrieved_chunks": [],
             "current_pass": 1,
@@ -1231,9 +1327,9 @@ class TriageSession:
         print("\n[Triage] All follow-up questions answered. Re-retrieving and diagnosing...")
 
         # Enriched retrieval
-        intake_summary = self._state.get("intake_summary") or {}
+        clinical_picture = self._state.get("clinical_picture") or {}
         followup_answers = self._state.get("followup_answers", {})
-        base_query = _build_mode_a_query(intake_summary)
+        base_query = _clinical_picture_to_query(clinical_picture)
         followup_context = " ".join(f"{q}: {a}" for q, a in followup_answers.items())
         enriched_query = f"{base_query} Additional context: {followup_context}"
 
