@@ -184,39 +184,20 @@ Return ONLY the JSON array.
         ]
 
         if not valid_detected:
-            # Could not detect — ask for clarification
-            attempts = state.get("clarification_attempts", 0) + 1
-            if attempts >= 3:
-                # Uncommon symptom — route to Triage Agent Mode B
-                human_msgs = [m for m in state["messages"] if isinstance(m, HumanMessage)]
-                raw_complaint = human_msgs[0].content if human_msgs else patient_text
-                handoff_msg = AIMessage(
-                    content=(
-                        "Your symptoms don't match the common conditions I'm equipped to assess "
-                        "through structured questions. I'm transferring you to our diagnostic "
-                        "system, which will analyze your case using our medical knowledge base "
-                        "and ask you targeted questions."
-                    )
-                )
-                return {
-                    "messages": [handoff_msg],
-                    "clarification_attempts": attempts,
-                    "uncommon_symptom": True,
-                    "raw_complaint": raw_complaint,
-                    "intake_complete": True,
-                }
-
-            clarify_msg = AIMessage(
+            # Not a common symptom — route directly to Triage Agent Mode B
+            raw_complaint = patient_text
+            handoff_msg = AIMessage(
                 content=(
-                    "I want to make sure I understand your main concern. "
-                    "Could you describe your primary symptom more specifically? "
-                    "For instance, are you experiencing chest pain, difficulty breathing, "
-                    "a cough, palpitations, or something else?"
+                    "I'll connect you with our diagnostic system, which will analyze "
+                    "your case using our medical knowledge base and ask you some "
+                    "targeted questions to help identify what's going on."
                 )
             )
             return {
-                "messages": [clarify_msg],
-                "clarification_attempts": attempts,
+                "messages": [handoff_msg],
+                "uncommon_symptom": True,
+                "raw_complaint": raw_complaint,
+                "intake_complete": True,
             }
 
         # Load all matching symptom objects
