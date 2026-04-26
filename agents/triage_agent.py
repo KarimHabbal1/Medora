@@ -352,18 +352,32 @@ def _build_check_sufficiency_node(llm: ChatOpenAI):
     """
     extract_criteria_prompt = """You are a clinical knowledge extraction system.
 From the following medical textbook passages, extract the KEY DIAGNOSTIC CRITERIA —
-the specific clinical findings, history points, and test results that the textbook
-says are needed to differentiate between the likely conditions.
+the specific clinical findings and history points that the textbook says are needed
+to differentiate between the likely conditions.
 
 Focus on information from sections like "Essentials of Diagnosis", "Clinical Findings",
 "Symptoms and Signs", and "General Considerations".
+
+IMPORTANT: Categorize each criterion by whether a PATIENT can provide it:
+
+- "patient_reportable": true — things a patient can tell you about:
+  onset pattern, duration, symptom character, triggers, associated symptoms,
+  medication use, past medical history, family history, lifestyle factors,
+  travel history, exposure history, allergies
+
+- "patient_reportable": false — things that require a clinician:
+  physical exam findings (heart murmurs, lung crackles, skin examination details),
+  lab results (blood tests, D-dimer, troponin, cultures),
+  imaging (X-ray, CT, MRI, ultrasound),
+  procedures (ECG interpretation, biopsy results)
 
 Return a JSON array of criteria objects:
 [
     {
         "criterion": "specific finding or information needed",
         "why": "which condition(s) it helps identify or rule out",
-        "category": "history" | "symptom" | "examination" | "investigation"
+        "category": "history" | "symptom" | "examination" | "investigation",
+        "patient_reportable": true | false
     }
 ]
 
@@ -375,29 +389,37 @@ Return ONLY valid JSON."""
 
     gap_analysis_prompt = """You are a clinical gap analysis system.
 Given:
-1. A list of diagnostic criteria needed (from the medical textbook)
+1. A list of diagnostic criteria needed (from the medical textbook), each marked
+   as patient_reportable (true/false)
 2. What we actually know from the patient's intake answers
 
 Perform a structured comparison:
-- For each criterion, determine if the intake answers COVER it (fully, partially, or not at all)
-- Identify the CRITICAL GAPS — criteria that are not covered and would significantly
-  change the differential diagnosis
+- ONLY analyze criteria where patient_reportable is TRUE
+  (ignore examination and investigation criteria — the patient cannot provide those)
+- For each patient-reportable criterion, determine if the intake answers COVER it
+- Identify CRITICAL GAPS — patient-reportable criteria not covered that would
+  significantly change the differential diagnosis
 
 Return a JSON object:
 {
     "covered": [{"criterion": "...", "covered_by": "which answer covers this"}],
-    "gaps": [{"criterion": "...", "why_critical": "how this would change the diagnosis"}],
+    "patient_gaps": [{"criterion": "...", "why_critical": "how knowing this would change the diagnosis"}],
+    "clinician_gaps": [{"criterion": "...", "note": "requires exam or test — include in recommendations"}],
     "sufficient": true/false,
     "followup_questions": ["patient-friendly question targeting gap 1", "..."]
 }
 
 Rules for followup_questions:
-- Only generate questions for CRITICAL gaps (not every gap needs a question)
+- ONLY target patient_gaps (things the patient CAN answer)
+- NEVER ask about examination findings, lab results, or imaging
 - Maximum 3 questions
 - Use patient-friendly language
 - Each question should target a specific missing criterion
 
-If there are no critical gaps, set "sufficient": true and "followup_questions": [].
+clinician_gaps should list the examination/investigation criteria that are missing —
+these will be included in the diagnosis report as recommended next steps for the doctor.
+
+If there are no critical patient_gaps, set "sufficient": true and "followup_questions": [].
 
 Return ONLY valid JSON."""
 
@@ -451,19 +473,26 @@ Return ONLY valid JSON."""
             gap_result = json.loads(gap_raw)
             is_sufficient = gap_result.get("sufficient", True)
             covered = gap_result.get("covered", [])
-            gaps = gap_result.get("gaps", [])
+            patient_gaps = gap_result.get("patient_gaps", [])
+            clinician_gaps = gap_result.get("clinician_gaps", [])
             followups = gap_result.get("followup_questions", []) if not is_sufficient else []
         except (json.JSONDecodeError, ValueError):
             is_sufficient = True
             covered = []
-            gaps = []
+            patient_gaps = []
+            clinician_gaps = []
             followups = []
 
         # Log the analysis
-        print(f"[Triage] Criteria covered: {len(covered)}, Gaps identified: {len(gaps)}")
-        if gaps:
-            for g in gaps:
-                print(f"  GAP: {g.get('criterion', '?')} — {g.get('why_critical', '?')}")
+        print(f"[Triage] Criteria covered: {len(covered)}")
+        print(f"[Triage] Patient-reportable gaps: {len(patient_gaps)}")
+        print(f"[Triage] Clinician-only gaps: {len(clinician_gaps)} (→ recommended investigations)")
+        if patient_gaps:
+            for g in patient_gaps:
+                print(f"  PATIENT GAP: {g.get('criterion', '?')} — {g.get('why_critical', '?')}")
+        if clinician_gaps:
+            for g in clinician_gaps:
+                print(f"  CLINICIAN GAP: {g.get('criterion', '?')} — {g.get('note', '?')}")
 
         if is_sufficient or not followups:
             print("[Triage] Information sufficient for diagnosis.")
