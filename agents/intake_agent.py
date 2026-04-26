@@ -1,5 +1,5 @@
 """
-Phase 5 — Intake Agent (v2)
+Phase 4.1 — Intake Agent (v2)
 ===========================
 A LangGraph-powered clinical intake agent with four major improvements:
 
