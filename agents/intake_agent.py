@@ -1302,15 +1302,41 @@ def main() -> None:
                 print(f"    - {rf.get('flag', '')} [{rf.get('urgency', '')}]")
         print("=" * 50)
 
-        if summary.get("escalated"):
-            print("\n  EMERGENCY — Patient directed to emergency services.")
-            print("  Triage Agent not invoked.\n")
+        if summary.get("escalated") or summary.get("urgency", "").lower() == "emergency":
+            print("\n  EMERGENCY — Patient should seek immediate medical attention.")
+            print("  Triage Agent not invoked for emergency cases.\n")
         else:
             print("\n  Routing to Triage Agent for diagnosis...\n")
             from agents.triage_agent import TriageSession as TriageSessionCls
             triage = TriageSessionCls(llm_model=args.model)
-            diagnosis_result = triage.diagnose_from_intake(summary)
-            # The triage agent prints its own output
+            result = triage.diagnose_from_intake(summary)
+
+            if isinstance(result, str):
+                # Follow-up questions needed
+                print(f"\nAgent: {result}\n")
+                while not triage.is_complete():
+                    try:
+                        user_input = input("You: ").strip()
+                    except (EOFError, KeyboardInterrupt):
+                        print("\n\nSession interrupted.\n")
+                        break
+                    if user_input.lower() in ("quit", "exit", "q"):
+                        print("\nGoodbye.\n")
+                        break
+                    if not user_input:
+                        continue
+                    followup_result = triage.respond_followup(user_input)
+                    if isinstance(followup_result, str):
+                        print(f"\nAgent: {followup_result}\n")
+                    else:
+                        _print_diagnosis(followup_result)
+            elif isinstance(result, dict):
+                if result.get("deferred"):
+                    print(f"\n  {result.get('report', 'Emergency case deferred.')}\n")
+                else:
+                    _print_diagnosis(result)
+            else:
+                print("\n  Triage Agent returned no result.\n")
 
 
 if __name__ == "__main__":
