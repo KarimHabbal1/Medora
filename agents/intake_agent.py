@@ -871,7 +871,10 @@ def _build_graph(llm: ChatOpenAI) -> StateGraph:
     def route_after_detect(state: IntakeState) -> str:
         if state.get("symptom_names"):
             return "merge_questions"
-        return "detect_symptom"
+        # No symptoms detected — END the graph so the user can respond.
+        # The session's respond() method re-invokes the graph with the new input.
+        # If uncommon_symptom is set, the session routes to Triage Mode B.
+        return END
 
     def route_after_merge(state: IntakeState) -> str:
         return "ask_question"
@@ -903,7 +906,7 @@ def _build_graph(llm: ChatOpenAI) -> StateGraph:
     graph.add_conditional_edges(
         "detect_symptom",
         route_after_detect,
-        {"merge_questions": "merge_questions", "detect_symptom": "detect_symptom"},
+        {"merge_questions": "merge_questions", END: END},
     )
 
     # merge_questions → prefill → ask_question
