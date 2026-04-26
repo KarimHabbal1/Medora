@@ -1,5 +1,5 @@
 """
-Phase 5 — Intake Agent (v2)
+Phase 4.1 — Intake Agent (v2)
 ===========================
 A LangGraph-powered clinical intake agent with four major improvements:
 
@@ -92,6 +92,8 @@ class IntakeState(TypedDict):
     intake_complete: bool             # True after all questions answered
     summary: str                      # final clinician handover note
     clarification_attempts: int       # number of failed symptom detection attempts
+    uncommon_symptom: bool            # True if symptom not in the 11 common symptoms
+    raw_complaint: str                # original patient complaint (for triage handoff)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -185,18 +187,23 @@ Return ONLY the JSON array.
             # Could not detect — ask for clarification
             attempts = state.get("clarification_attempts", 0) + 1
             if attempts >= 3:
-                clarify_msg = AIMessage(
+                # Uncommon symptom — route to Triage Agent Mode B
+                human_msgs = [m for m in state["messages"] if isinstance(m, HumanMessage)]
+                raw_complaint = human_msgs[0].content if human_msgs else patient_text
+                handoff_msg = AIMessage(
                     content=(
-                        "I'm having trouble identifying the specific symptom you're describing. "
-                        "Could you tell me in a few words what your main complaint is? "
-                        "For example: chest pain, cough, shortness of breath, headache, fever, "
-                        "palpitations, leg swelling, weight loss, fatigue, painful urination, "
-                        "or coughing up blood."
+                        "Your symptoms don't match the common conditions I'm equipped to assess "
+                        "through structured questions. I'm transferring you to our diagnostic "
+                        "system, which will analyze your case using our medical knowledge base "
+                        "and ask you targeted questions."
                     )
                 )
                 return {
-                    "messages": [clarify_msg],
+                    "messages": [handoff_msg],
                     "clarification_attempts": attempts,
+                    "uncommon_symptom": True,
+                    "raw_complaint": raw_complaint,
+                    "intake_complete": True,
                 }
 
             clarify_msg = AIMessage(
@@ -964,8 +971,10 @@ class IntakeSession:
             "intake_complete": False,
             "summary": "",
             "clarification_attempts": 0,
+            "uncommon_symptom": False,
+            "raw_complaint": "",
         }
-        self._phase: str = "detect"  # "detect" | "questioning" | "done"
+        self._phase: str = "detect"  # "detect" | "questioning" | "done" | "uncommon"
 
         # Pre-specified symptom(s) for testing — support comma-separated list
         if skip_to_symptom:
@@ -1048,7 +1057,9 @@ class IntakeSession:
         )
         self._state.update(result)
 
-        if self._state.get("symptom_names"):
+        if self._state.get("uncommon_symptom"):
+            self._phase = "uncommon"
+        elif self._state.get("symptom_names"):
             self._phase = "questioning"
         # else remains "detect" for clarification loop
 
@@ -1070,9 +1081,14 @@ class IntakeSession:
                 {"recursion_limit": 15},
             )
             self._state.update(result)
-            if self._state.get("symptom_names"):
+            if self._state.get("uncommon_symptom"):
+                self._phase = "uncommon"
+            elif self._state.get("symptom_names"):
                 self._phase = "questioning"
             return self._last_ai_text()
+
+        if self._phase == "uncommon":
+            return "The intake session has been routed to the diagnostic system. Please see above."
 
         # Phase: questioning
         process_answer_fn = _build_process_answer_node(self._llm)
@@ -1118,8 +1134,16 @@ class IntakeSession:
         return self._last_ai_text()
 
     def is_complete(self) -> bool:
-        """True when the intake has concluded and a summary is available."""
-        return self._phase == "done"
+        """True when the intake has concluded (summary available or routed to triage)."""
+        return self._phase in ("done", "uncommon")
+
+    def is_uncommon(self) -> bool:
+        """True when the symptom was not recognized and should be routed to Triage Agent Mode B."""
+        return self._phase == "uncommon"
+
+    def get_raw_complaint(self) -> str:
+        """Return the raw patient complaint for Triage Agent Mode B handoff."""
+        return self._state.get("raw_complaint", "")
 
     def get_summary(self) -> dict:
         """
@@ -1285,46 +1309,8 @@ def main() -> None:
             print("\n  Routing to Triage Agent for diagnosis...\n")
             from agents.triage_agent import TriageSession as TriageSessionCls
             triage = TriageSessionCls(llm_model=args.model)
-            result = triage.diagnose_from_intake(summary)
-
-            # Handle follow-up questions if info was insufficient
-            if isinstance(result, str):
-                print(f"\nAgent: {result}\n")
-                while not triage.is_complete():
-                    try:
-                        user_input = input("You: ").strip()
-                    except (EOFError, KeyboardInterrupt):
-                        print("\n\nSession interrupted.\n")
-                        break
-                    if user_input.lower() in ("quit", "exit", "q"):
-                        print("\nGoodbye.\n")
-                        break
-                    if not user_input:
-                        continue
-                    followup_result = triage.respond_followup(user_input)
-                    if isinstance(followup_result, str):
-                        print(f"\nAgent: {followup_result}\n")
-                    else:
-                        # Diagnosis produced
-                        _print_diagnosis(followup_result)
-            else:
-                # Diagnosis produced directly (info was sufficient)
-                _print_diagnosis(result)
-
-
-def _print_diagnosis(diagnosis: dict) -> None:
-    """Print the triage agent's diagnosis report."""
-    report = diagnosis.get("report", "")
-    mode = diagnosis.get("mode", "unknown")
-    pass_num = diagnosis.get("pass", 0)
-    chunks = diagnosis.get("num_chunks_used", 0)
-
-    print(f"\n{'='*60}")
-    print(f"  TRIAGE AGENT — DIAGNOSIS REPORT")
-    print(f"{'='*60}")
-    print(f"  Mode: {mode.upper()}  |  Pass: {pass_num}  |  Chunks used: {chunks}")
-    print(f"{'='*60}\n")
-    print(report)
+            diagnosis_result = triage.diagnose_from_intake(summary)
+            # The triage agent prints its own output
 
 
 if __name__ == "__main__":
