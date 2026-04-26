@@ -593,7 +593,7 @@ Return ONLY valid JSON."""
             print("[Triage] Information sufficient for diagnosis.")
             return {"info_sufficient": True}
 
-        print(f"[Triage] {len(gaps)} critical gap(s) found — generating {len(followups)} follow-up question(s).")
+        print(f"[Triage] {len(patient_gaps)} critical gap(s) found — generating {len(followups)} follow-up question(s).")
         return {
             "info_sufficient": False,
             "followup_questions": followups[:3],  # hard cap at 3
