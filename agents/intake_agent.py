@@ -1218,6 +1218,22 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _print_diagnosis(diagnosis: dict) -> None:
+    """Print the triage agent's diagnosis report."""
+    report = diagnosis.get("report", "")
+    mode = diagnosis.get("mode", "unknown")
+    pass_num = diagnosis.get("pass", 0)
+    chunks = diagnosis.get("num_chunks_used", 0)
+
+    print(f"\n{'='*60}")
+    print(f"  TRIAGE AGENT — DIAGNOSIS REPORT")
+    print(f"{'='*60}")
+    print(f"  Mode: {mode.upper()}  |  Pass: {pass_num}  |  Chunks used: {chunks}")
+    print(f"{'='*60}\n")
+    print(report)
+    print()
+
+
 def main() -> None:
     args = _parse_args()
 
