@@ -1,0 +1,6 @@
+approach,total_queries,accepted_count,accept_with_caution_count,rejected_count,valid_json_rate,privacy_pass_rate,average_sources_per_query,tier1_source_percentage,tier2_source_percentage,rejected_domain_leak_count,average_claims_per_query,conflict_detection_count,safety_warning_count,average_latency_seconds,llm_failure_count,deterministic_fallback_count,source_quality_score,evidence_completeness_score,safety_score,privacy_score,overall_score
+hybrid_recommended,5,0,5,0,100.0,100.0,5.0,80.0,20.0,0,3.8,1,2,49.5789,0,0,0.96,0.9675,0.82,1.0,0.9349
+deterministic_only,5,0,5,0,100.0,100.0,5.0,80.0,20.0,0,8.0,0,0,0.0009,0,0,0.96,1.0,1.0,1.0,0.988
+llm_claims_and_synthesis,5,0,5,0,100.0,100.0,5.0,80.0,20.0,0,3.6,1,1,73.8594,0,0,0.96,0.935,0.91,1.0,0.9492
+llm_synthesis_only,5,0,5,0,100.0,100.0,5.0,80.0,20.0,0,8.0,0,0,25.3132,0,0,0.96,1.0,1.0,1.0,0.988
+full_llm_council,5,2,3,0,100.0,100.0,5.0,80.0,20.0,0,3.8,0,1,73.9265,0,0,0.96,0.9675,0.91,1.0,0.9574
