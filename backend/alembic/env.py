@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from app.database import Base
 from app.config import settings
+import app.models  # noqa: F401 – populate Base.metadata with all ORM models
 
 from sqlalchemy import create_engine
 from alembic import context

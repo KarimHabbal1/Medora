@@ -3,7 +3,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models.user import User
+from ..models import User
 from .jwt import verify_token
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/signin")
@@ -29,16 +29,18 @@ def get_current_active_user(current_user: User = Depends(get_current_user)):
 
 
 def get_current_admin_user(current_user: User = Depends(get_current_active_user)):
-    if not current_user.is_admin:
+    if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not enough permissions")
     return current_user
 
 
 def get_current_doctor_user(current_user: User = Depends(get_current_active_user)):
-    # TEMPORARY: until roles are implemented, restrict doctor access to admin only
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=403,
-            detail="Doctor access restricted (temporary until roles are implemented)"
-        )
+    if current_user.role not in ["doctor", "admin"]:
+        raise HTTPException(status_code=403, detail="Doctor access required")
+    return current_user
+
+
+def get_current_patient_user(current_user: User = Depends(get_current_active_user)):
+    if current_user.role != "patient":
+        raise HTTPException(status_code=403, detail="Patient access required")
     return current_user

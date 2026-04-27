@@ -10,29 +10,37 @@ A FastAPI-based backend for the Medora medical triage system.
    ```
 
 2. Copy `.env.example` to `.env` and fill in your database URL and secret key.
+   - For demo, use PostgreSQL. Example: `DATABASE_URL=postgresql://user:password@localhost/medora`
+   - Set `SECRET_KEY` to a random string.
 
-3. Run the application:
+3. Run Alembic migrations:
+   ```bash
+   alembic upgrade head
+   ```
+
+4. Run the application:
    ```bash
    uvicorn app.main:app --reload
    ```
 
 ## Database
 
-- Database schema is not yet finalized.
-- Only User model is implemented for authentication.
-- Use mock data for other endpoints.
+- Full schema implemented with SQLAlchemy 2.x models.
+- PostgreSQL required for JSONB and UUID support.
+- Alembic migrations in `alembic/versions/`.
 
 ## API Routes
 
-- Auth: `/auth/*`
-- Patient: `/patients/*`
-- Triage: `/triage/*`
-- Doctor: `/doctor/*`
-- Admin: `/admin/*`
-- System: `/health*`
+- Auth: `/auth/*` - Signup, signin, me, refresh, logout, change-password
+- Patient: `/patients/*` - Profile, medical history, consents
+- Triage: `/triage/*` - Sessions, messages, reports
+- Doctor: `/doctor/*` - Dashboard, patients, reports, feedback
+- Admin: `/admin/*` - User management
+- System: `/health*` - Health checks
 
 ## Development
 
-- Keep code modular and flexible.
-- Use dependency injection.
-- Mock data is used where schema is unclear.
+- Code is modular with services for AI/RAG (currently mocked).
+- Dependency injection used throughout.
+- Role-based access control implemented.
+- AI/RAG logic abstracted in services for future implementation.

@@ -4,7 +4,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models.user import User
+from ..models import User, Hospital, PatientProfile
 from ..schemas.auth import UserCreate, UserLogin, Token, UserResponse, ChangePassword
 from ..auth.jwt import authenticate_user, create_access_token, create_refresh_token, get_password_hash, verify_password
 from ..auth.dependencies import get_current_active_user
@@ -14,14 +14,39 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/signup", response_model=UserResponse)
 def signup(user: UserCreate, db: Session = Depends(get_db)):
+    # For demo, use default hospital or create one
+    hospital = db.query(Hospital).first()
+    if not hospital:
+        hospital = Hospital(name="Demo Hospital", address="123 Demo St")
+        db.add(hospital)
+        db.commit()
+        db.refresh(hospital)
+    
     db_user = db.query(User).filter(User.email == user.email).first()
     if db_user:
         raise HTTPException(status_code=400, detail="Email already registered")
     hashed_password = get_password_hash(user.password)
-    db_user = User(email=user.email, hashed_password=hashed_password, full_name=user.full_name)
+    db_user = User(
+        hospital_id=hospital.id,
+        full_name=user.full_name,
+        email=user.email,
+        phone=user.phone,
+        password_hash=hashed_password,
+        role="patient",  # Default to patient for self-signup
+        registration_method="self_signup"
+    )
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
+    
+    # Create patient profile
+    patient_profile = PatientProfile(
+        user_id=db_user.id,
+        hospital_id=hospital.id
+    )
+    db.add(patient_profile)
+    db.commit()
+    
     return db_user
 
 
@@ -61,8 +86,8 @@ def logout():
 
 @router.patch("/change-password")
 def change_password(password_data: ChangePassword, current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)):
-    if not verify_password(password_data.old_password, current_user.hashed_password):
+    if not verify_password(password_data.old_password, current_user.password_hash):
         raise HTTPException(status_code=400, detail="Incorrect old password")
-    current_user.hashed_password = get_password_hash(password_data.new_password)
+    current_user.password_hash = get_password_hash(password_data.new_password)
     db.commit()
     return {"message": "Password changed"}

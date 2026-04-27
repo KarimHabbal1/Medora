@@ -5,7 +5,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from ..config import settings
-from ..models.user import User
+from ..models import User
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -22,7 +22,7 @@ def authenticate_user(db, email: str, password: str):
     user = db.query(User).filter(User.email == email).first()
     if not user:
         return False
-    if not verify_password(password, user.hashed_password):
+    if not verify_password(password, user.password_hash):
         return False
     return user
 
