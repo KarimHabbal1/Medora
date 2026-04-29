@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..auth.dependencies import get_current_admin_user
 from ..models import User, Hospital, DoctorProfile, PatientProfile
-from ..schemas.admin import UserCreateAdmin, UserResponseAdmin, UserUpdateAdmin
+from ..schemas.admin import UserCreateAdmin, UserResponseAdmin, UserUpdateAdmin, HospitalResponse
 from ..auth.jwt import get_password_hash
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -74,3 +74,8 @@ def update_user(user_id: str, update_data: UserUpdateAdmin, db: Session = Depend
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.get("/hospitals", response_model=List[HospitalResponse])
+def get_hospitals(db: Session = Depends(get_db), current_user: User = Depends(get_current_admin_user)):
+    return db.query(Hospital).order_by(Hospital.name).all()

@@ -20,38 +20,38 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # Create enums first
-    userrole = postgresql.ENUM('patient', 'doctor', 'admin', name='userrole')
-    userrole.create(op.get_bind())
+    userrole = postgresql.ENUM('patient', 'doctor', 'admin', name='userrole', create_type=False)
+    userrole.create(op.get_bind(), checkfirst=True)
 
-    registrationmethod = postgresql.ENUM('admin_created', 'self_signup', name='registrationmethod')
-    registrationmethod.create(op.get_bind())
+    registrationmethod = postgresql.ENUM('admin_created', 'self_signup', name='registrationmethod', create_type=False)
+    registrationmethod.create(op.get_bind(), checkfirst=True)
 
-    triagesessionstatus = postgresql.ENUM('active', 'completed', 'cancelled', name='triagesessionstatus')
-    triagesessionstatus.create(op.get_bind())
+    triagesessionstatus = postgresql.ENUM('active', 'completed', 'cancelled', name='triagesessionstatus', create_type=False)
+    triagesessionstatus.create(op.get_bind(), checkfirst=True)
 
-    urgencylevel = postgresql.ENUM('routine', 'urgent', 'emergency', 'unknown', name='urgencylevel')
-    urgencylevel.create(op.get_bind())
+    urgencylevel = postgresql.ENUM('routine', 'urgent', 'emergency', 'unknown', name='urgencylevel', create_type=False)
+    urgencylevel.create(op.get_bind(), checkfirst=True)
 
-    escalationtype = postgresql.ENUM('none', 'emergency_call', 'complex_diagnosis_agent', name='escalationtype')
-    escalationtype.create(op.get_bind())
+    escalationtype = postgresql.ENUM('none', 'emergency_call', 'complex_diagnosis_agent', name='escalationtype', create_type=False)
+    escalationtype.create(op.get_bind(), checkfirst=True)
 
-    chatretentionpolicy = postgresql.ENUM('summary_only', 'keep_full_history', name='chatretentionpolicy')
-    chatretentionpolicy.create(op.get_bind())
+    chatretentionpolicy = postgresql.ENUM('summary_only', 'keep_full_history', name='chatretentionpolicy', create_type=False)
+    chatretentionpolicy.create(op.get_bind(), checkfirst=True)
 
-    messagesender = postgresql.ENUM('patient', 'intake_agent', 'rag_agent', 'system', name='messagesender')
-    messagesender.create(op.get_bind())
+    messagesender = postgresql.ENUM('patient', 'intake_agent', 'rag_agent', 'system', name='messagesender', create_type=False)
+    messagesender.create(op.get_bind(), checkfirst=True)
 
-    messagetype = postgresql.ENUM('text', 'question', 'answer', 'warning', 'summary', 'stream_delta', name='messagetype')
-    messagetype.create(op.get_bind())
+    messagetype = postgresql.ENUM('text', 'question', 'answer', 'warning', 'summary', 'stream_delta', name='messagetype', create_type=False)
+    messagetype.create(op.get_bind(), checkfirst=True)
 
-    consenttype = postgresql.ENUM('medical_disclaimer', 'data_storage', 'ai_assistance', 'chat_history_storage', name='consenttype')
-    consenttype.create(op.get_bind())
+    consenttype = postgresql.ENUM('medical_disclaimer', 'data_storage', 'ai_assistance', 'chat_history_storage', name='consenttype', create_type=False)
+    consenttype.create(op.get_bind(), checkfirst=True)
 
-    doctorfeedbackrating = postgresql.ENUM('thumbs_up', 'thumbs_down', name='doctorfeedbackrating')
-    doctorfeedbackrating.create(op.get_bind())
+    doctorfeedbackrating = postgresql.ENUM('thumbs_up', 'thumbs_down', name='doctorfeedbackrating', create_type=False)
+    doctorfeedbackrating.create(op.get_bind(), checkfirst=True)
 
-    feedbackcategory = postgresql.ENUM('wrong_urgency', 'wrong_diagnosis', 'missing_info', 'unsafe_response', 'irrelevant_sources', 'other', name='feedbackcategory')
-    feedbackcategory.create(op.get_bind())
+    feedbackcategory = postgresql.ENUM('wrong_urgency', 'wrong_diagnosis', 'missing_info', 'unsafe_response', 'irrelevant_sources', 'other', name='feedbackcategory', create_type=False)
+    feedbackcategory.create(op.get_bind(), checkfirst=True)
 
     op.execute('CREATE EXTENSION IF NOT EXISTS "pgcrypto"')
 

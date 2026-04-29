@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from uuid import uuid4
+from uuid import uuid4, UUID
 from typing import Dict, Any
 from ..schemas.triage import ClinicalReportResponse
 from ..schemas.enums import UrgencyLevel
@@ -12,9 +12,9 @@ def generate_clinical_report(session_id: str, patient_id: str, doctor_id: str) -
     """
     return ClinicalReportResponse(
         id=uuid4(),
-        session_id=session_id,
-        patient_id=patient_id,
-        doctor_id=doctor_id,
+        session_id=UUID(session_id),
+        patient_id=UUID(patient_id),
+        doctor_id=UUID(doctor_id),
         presenting_complaints={"complaint": "Mock complaint"},
         history_of_presenting_complaint={"history": "Mock history"},
         summary_text="Patient presented with symptoms. Assessment completed.",

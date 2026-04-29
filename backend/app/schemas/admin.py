@@ -35,3 +35,11 @@ class UserUpdateAdmin(BaseModel):
     phone: Optional[str] = None
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
+
+
+class HospitalResponse(BaseModel):
+    id: UUID
+    name: str
+
+    class Config:
+        from_attributes = True
