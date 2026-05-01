@@ -318,12 +318,19 @@ Return ONLY valid JSON."""
         if rf.get("flag")
     ]
 
-    return {
+    result = {
         "symptoms": intake_summary.get("symptoms", []),
         "urgency": intake_summary.get("urgency", "routine"),
         "clinical_findings": clinical_findings,
         "red_flags": clean_red_flags,
     }
+
+    # Include patient history context if available (from PatientMemory)
+    patient_history = intake_summary.get("patient_history_context", "")
+    if patient_history:
+        result["patient_history"] = patient_history
+
+    return result
 
 
 def _clinical_picture_to_query(clinical_picture: dict) -> str:
@@ -375,6 +382,12 @@ def _clinical_picture_to_context(clinical_picture: dict) -> str:
         lines.append("Red flags:")
         for rf in red_flags:
             lines.append(f"  - {rf.get('flag', '')} [{rf.get('urgency', '')}]")
+
+    patient_history = clinical_picture.get("patient_history", "")
+    if patient_history:
+        lines.append("")
+        lines.append("Patient background (from previous sessions):")
+        lines.append(patient_history)
 
     return "\n".join(lines)
 

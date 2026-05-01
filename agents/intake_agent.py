@@ -213,11 +213,27 @@ Return ONLY the JSON array.
                 + f" and {valid_detected[-1].lower()}"
             )
 
+        # Include patient history confirmation if returning patient
+        patient_ctx = state.get("patient_context", "")
+        history_note = ""
+        if patient_ctx:
+            confirm_response = llm.invoke([
+                SystemMessage(content=(
+                    "You are a compassionate clinical intake assistant. The patient is returning "
+                    "for a new session. Based on their known history below, briefly confirm the "
+                    "key facts with them in 1-2 natural sentences. Ask if anything has changed. "
+                    "Keep it warm and concise."
+                )),
+                HumanMessage(content=f"Patient's known history:\n{patient_ctx}"),
+            ])
+            history_note = f"\n\n{confirm_response.content.strip()}"
+
         intro = AIMessage(
             content=(
                 f"Thank you for sharing that. I understand you're experiencing {symptom_phrase}. "
                 f"I'd like to ask you a few questions to better understand your situation "
                 f"and help your care team. Please answer as best you can."
+                f"{history_note}"
             )
         )
 
@@ -1336,6 +1352,10 @@ def main() -> None:
             print("\n  Routing to Triage Agent for diagnosis...\n")
             from agents.triage_agent import TriageSession as TriageSessionCls
             triage = TriageSessionCls(llm_model=args.model)
+            # Inject patient history context for the Triage Agent
+            triage_ctx = memory.get_context_for_triage(patient_name)
+            if triage_ctx:
+                summary["patient_history_context"] = triage_ctx
             result = triage.diagnose_from_intake(summary)
 
             if isinstance(result, str):
