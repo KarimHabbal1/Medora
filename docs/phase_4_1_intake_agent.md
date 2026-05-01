@@ -672,6 +672,48 @@ else:
 
 ---
 
+## Design Evolution
+
+The Intake Agent reached its current design through four iterations. Each iteration identified a concrete flaw in the prior implementation and introduced a targeted fix. This section documents the progression from the original naive design to the final implementation, including the routing and emergency logic that only emerged after the Triage Agent was built.
+
+### Iteration 1: Naive Single-Symptom Agent
+
+The initial implementation detected a single symptom from the patient's message and asked questions verbatim from the structured JSON. Problems identified:
+
+- Questions were asked in isolation — the agent didn't reference previous answers, making conversations feel robotic
+- Vague answers like "maybe" or "not sure" were accepted without follow-up
+- Red flags used clinical terminology ("prolonged chest pain episodes") that patients would never say — real-time red flag detection almost never triggered
+- Only one symptom was detected — "chest pain and coughing blood" picked either chest pain OR hemoptysis, ignoring the other
+- "Yes" to important history questions (smoking, heart disease) was recorded without asking for critical details (how long? which conditions?)
+- If the patient already stated information in their opening message, the agent asked about it again
+
+### Iteration 2: Six Targeted Fixes
+
+Each flaw was addressed with a specific fix:
+
+1. **Context-aware questions** — all previous Q&A pairs passed to the LLM when rephrasing the next question
+2. **Follow-up on vague answers** — adequacy check after each answer, one targeted follow-up for uninformative responses
+3. **Clinically permissive red flag detection** — LLM interprets patient language against clinical concepts, checks ALL accumulated answers
+4. **Multi-symptom support** — detects multiple symptoms, merges question lists, pools red flags and urgency rules
+5. **Clinical depth probing** — detects clinically incomplete answers and asks for specific missing details
+6. **Pre-fill from initial message** — extracts already-stated information and skips those questions
+
+### Iteration 3: Routing and Integration
+
+After building the Triage Agent, the Intake Agent needed to route cases to it:
+
+- **Initial approach**: 3-attempt clarification loop for unrecognised symptoms — ask the patient to rephrase up to 3 times before routing to Triage
+- **Flaw identified**: The clarification asked the same question repeatedly. If the patient says "sore throat" and it doesn't match, asking again won't help — the Triage Agent's RAG-guided questioning handles unknown symptoms far better
+- **Final design**: Immediate routing on first detection failure — no wasted clarification attempts
+
+### Iteration 4: Emergency Routing Logic
+
+- **Initial approach**: Skip the Triage Agent for ALL emergency cases (both mid-conversation escalation AND final urgency assessment)
+- **Flaw identified**: When the LLM assesses urgency as "emergency" at the end of intake (e.g., sudden-onset headache → possible subarachnoid hemorrhage), the doctor still needs a diagnosis. Only mid-conversation escalation (red flag triggered → "call 911") should skip the Triage Agent
+- **Final design**: Only skip Triage when `escalated=True` (patient was told to call 911 during intake). Emergency urgency from final assessment still routes to Triage — the doctor needs the evidence-based diagnosis regardless of urgency level
+
+---
+
 ## Remaining Limitations
 
 These limitations are documented explicitly as areas for future work. Each limitation represents a known gap between the current implementation and a production clinical intake system.

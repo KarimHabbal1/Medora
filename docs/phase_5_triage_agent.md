@@ -711,6 +711,66 @@ These values reflect the Phase 3 recommendation. No separate configuration step 
 
 ---
 
+## Design Evolution
+
+The Triage Agent reached its current design through seven iterations. Each iteration identified a structural flaw in the prior approach and introduced a targeted fix. This section documents the full progression — from the initial advisory engine that produced no diagnosis, to the grounded diagnostic system with bias prevention and pass-count caps that exists in the final implementation.
+
+### Iteration 1: Clinical Analysis Engine (not a diagnostic engine)
+
+The initial Triage Agent produced "clinical analysis" — advisory text about what the textbook says. It did not produce an actual diagnosis. Problems:
+
+- No primary diagnosis with confidence level
+- No ranked differential diagnoses
+- No clinical reasoning chain
+- The output read like a literature review, not a diagnostic report
+
+### Iteration 2: Diagnostic Engine with Two Modes
+
+Complete redesign to produce actual diagnoses:
+
+- **Mode A (common symptoms)**: Single-pass RAG from intake summary
+- **Mode B (uncommon symptoms)**: Multi-pass RAG with questioning
+- Diagnosis report format: primary diagnosis, ranked differentials, clinical reasoning, investigations, management, red flags, sources
+
+### Iteration 3: The Infinite Loop Problem (Mode B)
+
+- **Risk identified**: In Mode B, patient answers could reveal new findings → new RAG search → new questions → new answers → infinite loop
+- **Solution**: Hard cap of 3 passes with clear purpose for each:
+  - Pass 1: understand the problem (broad retrieval → generate questions)
+  - Pass 2: analyze with patient input (targeted retrieval → preliminary diagnosis)
+  - Pass 3: handle surprises (critical finding refinement → final diagnosis)
+- Pass 3 only triggers if the LLM identifies a critical finding that significantly changes the differential
+- No Pass 4, ever — cases needing more than 3 passes should be flagged for direct clinician review
+
+### Iteration 4: LLM-Judgment Sufficiency Check → Criteria-Based Gap Analysis
+
+- **Initial approach**: After retrieving evidence for Mode A, asked the LLM "do you have enough info for a diagnosis?" — a yes/no judgment call
+- **Flaw identified**: The LLM could say "sufficient" by filling gaps from its training data rather than the textbook. The check was ungrounded
+- **Final design**: Two-step criteria-based approach:
+  1. Extract diagnostic criteria from the retrieved textbook passages (what the textbook says you need to know)
+  2. Structured gap analysis comparing criteria against intake answers (what is covered vs what is missing)
+- Follow-up questions target specific textbook-grounded gaps, not LLM intuition
+
+### Iteration 5: Patient-Reportable vs Clinician-Only Criteria
+
+- **Flaw identified**: The diagnostic criteria extracted from the textbook include things like "ECG changes", "D-dimer level", and "CT angiography findings" — information a patient cannot provide
+- **Problem**: The system would generate follow-up questions asking patients about X-ray results or blood tests
+- **Final design**: Each criterion is categorised as `patient_reportable: true/false`. Only patient-reportable gaps generate follow-up questions. Clinician-only gaps are routed to the "Recommended Investigations" section of the diagnosis report
+
+### Iteration 6: Clinical Picture Parser
+
+- **Flaw identified**: The raw intake summary passed to the Triage Agent contained noise — question text, clinician notes, specialty routing lists, workup recommendations from Phase 1.3 data
+- **Problem**: Specialty routing from the Intake Agent could bias the Triage Agent's diagnosis (e.g., if the intake summary says "route to Cardiology", the Triage Agent might anchor on cardiac diagnoses)
+- **Final design**: `parse_intake_to_clinical_picture()` distills the intake summary to pure clinical signal — key-value pairs of findings, stripped of all artifacts and pre-computed recommendations. The Triage Agent forms its own diagnostic conclusions from the evidence
+
+### Iteration 7: Emergency Guard Removal
+
+- **Initial approach**: Triage Agent had an internal emergency guard — if `urgency == "emergency"`, return immediately with "Triage Agent defers"
+- **Flaw identified**: This meant emergency cases (e.g., sudden-onset headache classified as emergency by the Intake Agent's final assessment) received no diagnosis — the doctor got only the intake summary with no evidence-based analysis
+- **Final design**: The emergency guard was removed from the Triage Agent entirely. The routing decision lives in the Intake Agent: only skip Triage when `escalated=True` (mid-conversation red flag). All other cases, including emergency-urgency from the final assessment, receive a full diagnosis
+
+---
+
 ## Limitations
 
 ### All LLM Calls Use GPT-4o (No Tiered Model Yet)
