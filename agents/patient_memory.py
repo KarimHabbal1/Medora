@@ -404,7 +404,7 @@ class PatientMemory:
 
         # Smoking
         smoking = profile.get("smoking_history", {})
-        if smoking and smoking.get("status"):
+        if smoking and (smoking.get("status") or smoking.get("duration") or smoking.get("quantity")):
             smoke_str = _format_smoking(smoking)
             if smoke_str:
                 lines.append(f"- Smoking: {smoke_str}")
@@ -454,7 +454,7 @@ class PatientMemory:
 
         # Build the confirmation list — briefly verify known facts instead of skipping
         confirm_items: list[str] = []
-        if smoking and smoking.get("status"):
+        if smoking and (smoking.get("status") or smoking.get("duration") or smoking.get("quantity")):
             confirm_items.append(f"smoking history ({_format_smoking(smoking)})")
         if conditions:
             cond_summary = ", ".join(
@@ -536,7 +536,7 @@ class PatientMemory:
 
         # Smoking
         smoking = profile.get("smoking_history", {})
-        if smoking and smoking.get("status"):
+        if smoking and (smoking.get("status") or smoking.get("duration") or smoking.get("quantity")):
             smoke_str = _format_smoking(smoking)
             if smoke_str:
                 lines.append(f"- Smoking: {smoke_str}")
@@ -594,17 +594,19 @@ class PatientMemory:
 
 def _format_smoking(smoking: dict) -> str:
     """Return a human-readable smoking history string."""
+    parts = []
     status = smoking.get("status", "")
-    if not status:
-        return ""
-    parts = [f"{status} smoker"]
+    if status:
+        parts.append(f"{status} smoker")
     if smoking.get("duration"):
         parts.append(f"{smoking['duration']}")
     if smoking.get("quantity"):
         parts.append(f"{smoking['quantity']}")
     if smoking.get("quit"):
         parts.append(f"quit {smoking['quit']}")
-    return " — ".join(parts) if len(parts) > 1 else parts[0]
+    if not parts:
+        return ""
+    return " — ".join(parts)
 
 
 def _extract_primary_diagnosis(report_text: str) -> str:
