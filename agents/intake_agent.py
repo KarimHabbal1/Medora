@@ -94,6 +94,7 @@ class IntakeState(TypedDict):
     clarification_attempts: int       # number of failed symptom detection attempts
     uncommon_symptom: bool            # True if symptom not in the 11 common symptoms
     raw_complaint: str                # original patient complaint (for triage handoff)
+    patient_context: str              # patient memory context injected from PatientMemory
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -411,12 +412,16 @@ Rules:
         answers = state.get("answers", {})
         previous_qa = _format_previous_qa(answers)
 
+        patient_ctx = state.get("patient_context", "")
+        ctx_block = f"\nKnown patient history:\n{patient_ctx}\n" if patient_ctx else ""
+
         response = llm.invoke([
             SystemMessage(content=system_prompt),
             HumanMessage(
                 content=(
                     f"Symptom being assessed: {symptom_phrase}\n"
-                    f"Previous answers so far:\n{previous_qa}\n\n"
+                    f"Previous answers so far:\n{previous_qa}\n"
+                    f"{ctx_block}\n"
                     f"Next clinical question to ask: {clinical_question}"
                 )
             ),
@@ -934,7 +939,7 @@ class IntakeSession:
         summary = session.get_summary()
     """
 
-    def __init__(self, llm_model: str = "gpt-4o", skip_to_symptom: str | None = None):
+    def __init__(self, llm_model: str = "gpt-4o", skip_to_symptom: str | None = None, patient_context: str = ""):
         self._llm = _make_llm(llm_model)
         self._graph = _build_graph(self._llm)
         self._state: IntakeState = {
@@ -957,6 +962,7 @@ class IntakeSession:
             "clarification_attempts": 0,
             "uncommon_symptom": False,
             "raw_complaint": "",
+            "patient_context": patient_context,
         }
         self._phase: str = "detect"  # "detect" | "questioning" | "done" | "uncommon"
 
@@ -1223,12 +1229,33 @@ def main() -> None:
 
     print("\nMedora Intake Agent")
     print("=" * 50)
-    print("Type your symptoms to begin. Type 'quit' to exit.")
+
+    # ── Patient identification + memory ──────────────────────────────────────
+    from agents.patient_memory import PatientMemory
+
+    memory = PatientMemory()
+    patient_name = input("Patient name: ").strip()
+    if not patient_name:
+        patient_name = "anonymous"
+
+    profile = memory.get_or_create(patient_name)
+    intake_context = memory.get_context_for_intake(patient_name)
+
+    if profile.get("sessions", 0) > 0:
+        print(f"  Welcome back, {patient_name}. Loading your history...")
+    else:
+        print(f"  New patient: {patient_name}")
+
+    print("\nType your symptoms to begin. Type 'quit' to exit.")
     if args.symptom:
         print(f"[Testing mode: symptom pre-set to '{args.symptom}']")
     print("=" * 50 + "\n")
 
-    session = IntakeSession(llm_model=args.model, skip_to_symptom=args.symptom)
+    session = IntakeSession(
+        llm_model=args.model,
+        skip_to_symptom=args.symptom,
+        patient_context=intake_context,
+    )
 
     # ── First turn ────────────────────────────────────────────────────────────
     first_input = input("You: ").strip()
@@ -1337,6 +1364,18 @@ def main() -> None:
                     _print_diagnosis(result)
             else:
                 print("\n  Triage Agent returned no result.\n")
+
+    # ── Update patient memory ────────────────────────────────────────────────
+    if session.is_complete() and patient_name != "anonymous":
+        print("\n  Updating patient profile...")
+        diagnosis_data = {}
+        if 'triage' in dir() and hasattr(triage, 'get_diagnosis'):
+            diagnosis_data = triage.get_diagnosis() if triage.is_complete() else {}
+        summary_data = session.get_summary() if not session.is_uncommon() else {}
+        if summary_data or diagnosis_data:
+            llm_for_memory = _make_llm(args.model)
+            memory.update_from_session(patient_name, summary_data, diagnosis_data, llm_for_memory)
+            print(f"  Patient profile for '{patient_name}' updated.\n")
 
 
 if __name__ == "__main__":

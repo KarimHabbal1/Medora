@@ -40,4 +40,7 @@ data/chroma/
 
 # Embeddings (generated artefacts)
 data/embeddings/
+
+# Patient profiles (PHI — never commit)
+data/patient_profiles/
 .claude/
