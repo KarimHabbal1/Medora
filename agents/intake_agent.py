@@ -1385,14 +1385,27 @@ def main() -> None:
             else:
                 print("\n  Triage Agent returned no result.\n")
 
-    # ── Update patient memory ────────────────────────────────────────────────
-    if session.is_complete() and patient_name != "anonymous":
-        print("\n  Updating patient profile...")
+    # ── Save case to feedback store + update patient memory ─────────────────
+    if session.is_complete():
         diagnosis_data = {}
         if 'triage' in dir() and hasattr(triage, 'get_diagnosis'):
             diagnosis_data = triage.get_diagnosis() if triage.is_complete() else {}
         summary_data = session.get_summary() if not session.is_uncommon() else {}
-        if summary_data or diagnosis_data:
+
+        # Save case for doctor review
+        if diagnosis_data and diagnosis_data.get("report"):
+            from agents.feedback_store import FeedbackStore, save_case_from_session
+            feedback = FeedbackStore()
+            clinical_pic = triage._state.get("clinical_picture", {}) if 'triage' in dir() else {}
+            chunks = triage._state.get("retrieved_chunks", []) if 'triage' in dir() else []
+            case_id = save_case_from_session(
+                feedback, patient_name, summary_data, clinical_pic, diagnosis_data, chunks
+            )
+            print(f"\n  Case saved for doctor review (ID: {case_id})")
+
+        # Update patient memory
+        if patient_name != "anonymous" and (summary_data or diagnosis_data):
+            print("  Updating patient profile...")
             llm_for_memory = _make_llm(args.model)
             memory.update_from_session(patient_name, summary_data, diagnosis_data, llm_for_memory)
             print(f"  Patient profile for '{patient_name}' updated.\n")

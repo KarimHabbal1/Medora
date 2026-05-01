@@ -43,4 +43,7 @@ data/embeddings/
 
 # Patient profiles (PHI — never commit)
 data/patient_profiles/
+
+# Doctor feedback / training data (PHI — never commit)
+data/feedback/
 .claude/
