@@ -446,23 +446,31 @@ class PatientMemory:
                 f"— {sessions_str}"
             )
 
-        # Build the "do not ask about" hint
-        skip_topics: list[str] = []
+        # Build the confirmation list — briefly verify known facts instead of skipping
+        confirm_items: list[str] = []
         if smoking and smoking.get("status"):
-            skip_topics.append("smoking history")
+            confirm_items.append(f"smoking history ({_format_smoking(smoking)})")
         if conditions:
-            skip_topics.append("known conditions / medical history")
+            cond_summary = ", ".join(c.get("condition", "") for c in conditions)
+            confirm_items.append(f"conditions ({cond_summary})")
         if medications:
-            skip_topics.append("current medications")
+            med_summary = ", ".join(m.get("medication", "") for m in medications)
+            confirm_items.append(f"medications ({med_summary})")
         if allergies:
-            skip_topics.append("allergies")
+            confirm_items.append("allergies")
         if surgical:
-            skip_topics.append("surgical history")
+            confirm_items.append("surgical history")
 
         lines.append("")
-        if skip_topics:
-            lines.append(f"You do NOT need to ask about: {', '.join(skip_topics)}.")
-        lines.append("Focus your questions on the NEW presenting complaint.")
+        if confirm_items:
+            lines.append(
+                "Briefly CONFIRM these known facts with the patient (one sentence each, "
+                "accept yes/no — if anything changed, record the update):"
+            )
+            for item in confirm_items:
+                lines.append(f"  - {item}")
+            lines.append("")
+        lines.append("Focus your detailed questions on the NEW presenting complaint.")
 
         return "\n".join(lines)
 
