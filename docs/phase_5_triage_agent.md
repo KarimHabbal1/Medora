@@ -10,7 +10,7 @@ The Triage Agent operates in two distinct modes:
 
 **Mode A — Common Symptoms.** The patient presented with a symptom the Intake Agent recognised. A full structured interview has already been conducted. The Triage Agent receives the structured summary (symptoms, Q&A answers, red flags, urgency), parses it into a clean clinical picture, retrieves relevant textbook passages, checks whether the intake answers are sufficient for diagnosis, optionally asks follow-up questions if critical gaps exist, and generates the diagnosis.
 
-**Mode B — Uncommon Symptoms.** The patient presented with a complaint the Intake Agent could not classify after three clarification attempts. No structured interview exists. The Triage Agent receives only the raw complaint and builds the clinical picture through a three-pass conversational process: broad retrieval to understand the problem space, targeted questions to the patient, and progressive diagnosis refinement.
+**Mode B — Uncommon Symptoms.** The patient presented with a complaint the Intake Agent could not classify on the first detection attempt. No structured interview exists. The Triage Agent receives only the raw complaint and builds the clinical picture through a three-pass conversational process: broad retrieval to understand the problem space, targeted questions to the patient, and progressive diagnosis refinement.
 
 Both modes share the same RAG infrastructure (Phases 2 and 3), the same diagnosis generation prompt, and the same seven-section output format.
 
@@ -222,22 +222,6 @@ The Triage Agent's diagnosis is grounded in the retrieved textbook passages, not
 **Step 4b: If insufficient — ask follow-up questions.**
 `ask_followup_mode_a` emits the first follow-up question. The graph pauses at END. `TriageSession.respond_followup()` handles subsequent patient answers. After all follow-up answers are collected, `retrieve_evidence_enriched` re-retrieves with the enriched query (clinical picture plus follow-up answers), then `generate_diagnosis` generates the final report.
 
-### The Emergency Guard
-
-`diagnose_from_intake()` reads the urgency field before entering the graph. If `urgency == "emergency"`, it returns a deferral response immediately:
-
-```python
-{
-    "report": "Emergency case — patient has been directed to emergency services. Triage Agent defers.",
-    "mode": "common",
-    "pass": 0,
-    "num_chunks_used": 0,
-    "deferred": True,
-}
-```
-
-The Intake Agent has already escalated an emergency case to emergency services. Running RAG and diagnosis generation on a STEMI or tension pneumothorax presentation wastes time the patient does not have. The Triage Agent gets out of the way.
-
 ---
 
 ## The Criteria-Based Sufficiency Check
@@ -312,7 +296,7 @@ Follow-up questions are capped at 3. The `followup_questions` list is sliced to 
 
 ### Full Three-Pass Flow
 
-Mode B handles presentations the Intake Agent could not classify. The only input is the patient's raw complaint string.
+Mode B handles presentations the Intake Agent could not classify on the first detection attempt. The only input is the patient's raw complaint string — captured immediately at the point of handoff, with no clarification iterations.
 
 ### Pass 1: Broad Retrieval and Question Generation
 
@@ -474,7 +458,7 @@ Intake Agent
 - Clinical findings (after parse): pain quality, radiation, triggers, cardiovascular history, smoking history
 - Red flags: hemoptysis in context of acute chest pain [urgent]
 
-**Emergency guard:** Passed — urgency is `"urgent"`, not `"emergency"`.
+**Routing:** Intake was not escalated mid-conversation (`escalated=False`), so the Triage Agent was invoked. Urgency level is `"urgent"` — the Triage Agent processes all urgency levels.
 
 **Sufficiency check result:** Sufficient — exertional pattern, radiation, and prior stroke history covered. Pleuritic character and leg swelling flagged as clinician-assessable gaps, routed to Recommended Investigations.
 
@@ -588,7 +572,7 @@ Triage Agent ready  (bi-encoder on mps, reranker on cpu)
 
 ### `diagnose_from_intake(intake_summary) → dict | str`
 
-Mode A entry point. Runs emergency guard, initialises state, invokes the graph.
+Mode A entry point. Initialises state and invokes the graph. The Triage Agent processes all intake cases regardless of urgency level — including cases classified as "emergency" by the `assess_urgency` node — because a doctor still needs a diagnosis. The only cases that do NOT reach the Triage Agent are those where `escalated=True` (mid-conversation red flag escalation where the patient was already directed to call 911); that routing decision is made by the Intake Agent CLI before calling `diagnose_from_intake()`, not inside the Triage Agent itself.
 
 If intake answers are sufficient: returns the diagnosis dict directly (non-interactive).
 If insufficient: returns the first follow-up question as a string. Caller should then use `respond_followup()` for each answer.
@@ -600,14 +584,6 @@ If insufficient: returns the first follow-up question as a string. Caller should
     "mode": "common",
     "pass": 1,
     "num_chunks_used": int,
-}
-# Returns for emergency cases:
-{
-    "report": str,           # short deferral message
-    "mode": "common",
-    "pass": 0,
-    "num_chunks_used": 0,
-    "deferred": True,
 }
 ```
 

@@ -83,11 +83,11 @@ The entry node. Receives the patient's first message and maps it to one or more 
 
 The node presents the LLM with the full list of 11 symptom names and asks it to return a JSON array of matched symptoms from the patient's text. The system prompt requires exact capitalisation matching (e.g., `"Chest Pain"` not `"chest pain"`) to enable direct dictionary lookup against `_SYMPTOM_MAP`. The prompt instructs the LLM to return multiple symptoms when the patient's message clearly describes more than one — for example, `"chest pain and coughing blood"` returns `["Chest Pain", "Hemoptysis"]`.
 
-If no symptom is matched, the node increments a `clarification_attempts` counter and returns a clarification message asking the patient to describe their complaint more specifically. After three failed attempts, the clarification message lists all 11 canonical symptom categories explicitly, giving the patient concrete terms to anchor their description. This prevents infinite clarification loops: the agent will always eventually get enough information to route correctly or terminate gracefully.
+If no symptom is matched — that is, the LLM returns no valid names from the patient's message — the node immediately routes to Triage Agent Mode B. There is no clarification loop. The node sets `uncommon_symptom = True`, records the patient's raw complaint in `raw_complaint`, sets `intake_complete = True`, and appends a handoff message informing the patient they will be connected to the diagnostic system. The graph reaches END and the session manager routes to the Triage Agent.
 
 On successful detection, the node loads all matching symptom objects from `_SYMPTOM_MAP`, pools their red flags and urgency rules (deduplicating by flag text and rule criteria respectively), and populates the state with `symptom_names`, `symptom_data_list`, `all_red_flags`, and `all_urgency_rules`. An introductory AI message acknowledging the detected symptom(s) is appended to the conversation history.
 
-If symptom detection fails (no valid names returned), the conditional edge `route_after_detect` loops back to `detect_symptom`, triggering another clarification attempt. If detection succeeds, the edge routes forward to `merge_questions`.
+If detection succeeds, the conditional edge `route_after_detect` routes forward to `merge_questions`. If detection fails (no valid names returned), the edge routes to END — the uncommon path is triggered immediately without any further clarification attempts.
 
 ### Node 2: `merge_questions`
 
@@ -193,7 +193,7 @@ The full conversation state is defined by the `IntakeState` TypedDict. All 16 fi
 | `escalated` | `bool` | True if the `escalate` node has fired. Indicates emergency directive was issued to the patient. |
 | `intake_complete` | `bool` | True when all questions in `merged_questions` have been answered or pre-filled and no follow-up is pending. Triggers the `assess_urgency` → `generate_summary` path. |
 | `summary` | `str` | The generated clinician handover note text. Populated by `generate_summary`. Empty string until intake completes. |
-| `clarification_attempts` | `int` | Count of failed symptom detection attempts. Used to trigger the more explicit clarification message after two failures. |
+| `clarification_attempts` | `int` | Legacy field. Always 0 in the current implementation — symptom detection now routes immediately to Triage Agent Mode B on failure rather than cycling through clarification attempts. Retained in state for schema compatibility. |
 
 ---
 
@@ -356,7 +356,7 @@ A typical intake session makes approximately 15 to 20 LLM calls:
 
 | Node / Call | LLM calls | Notes |
 |---|---|---|
-| `detect_symptom` | 1 (up to 3 on clarification) | Returns JSON array of symptom names |
+| `detect_symptom` | 1 | Returns JSON array of symptom names; routes immediately to Mode B on failure (no clarification loop) |
 | `merge_questions` | 0 or 1 | Only called if multiple symptoms detected |
 | `prefill` | 1 | Extracts pre-filled answers from initial message |
 | `ask_question` (per question) | 1 each | Typically 4–7 calls for a 5–8 question intake |
@@ -436,7 +436,7 @@ summary = session.get_summary()
 
 **`IntakeSession.start(patient_message: str) → str`**
 
-Begins the intake session with the patient's first message. Returns the agent's first response as a string — either an introductory message followed by the first question (for a successful symptom detection), or a clarification request (if no symptom was detected). Must be called before any `respond()` calls.
+Begins the intake session with the patient's first message. Returns the agent's first response as a string — either an introductory message followed by the first question (for a successful symptom detection), or a handoff message informing the patient they are being routed to the diagnostic system (if no common symptom was matched). Must be called before any `respond()` calls.
 
 **`IntakeSession.respond(patient_message: str) → str`**
 
@@ -444,7 +444,7 @@ Processes the patient's answer to a question. Returns the agent's next message, 
 
 **`IntakeSession.is_complete() → bool`**
 
-Returns True when the intake has concluded — either all questions have been answered and the summary has been generated, or emergency escalation has triggered the early-exit path. Returns False during an active intake.
+Returns True when the intake has concluded — either all questions have been answered and the summary has been generated, emergency escalation has triggered the early-exit path, or the symptom was not recognised and the session has been routed to Triage Agent Mode B. Returns False during an active intake.
 
 **`IntakeSession.get_summary() → dict`**
 
@@ -506,7 +506,7 @@ The most common path. When the Intake Agent successfully classified the symptom 
 
 **Path 2: Uncommon symptom — Mode B**
 
-When the Intake Agent failed to match any of the 11 canonical symptoms after three clarification attempts, `uncommon_symptom` is set to True and `intake_complete` is set to True simultaneously. The CLI detects `session.is_uncommon()` and routes to `TriageSession.start_uncommon()`, passing only the raw complaint string captured from the patient's first message. The Triage Agent then runs its multi-pass conversational Mode B flow, asking its own follow-up questions.
+When the Intake Agent's first detection attempt fails to match any of the 11 canonical symptoms, the agent routes immediately to Mode B without any clarification attempts. `uncommon_symptom` is set to True and `intake_complete` is set to True simultaneously. The CLI detects `session.is_uncommon()` and routes to `TriageSession.start_uncommon()`, passing only the raw complaint string captured from the patient's first message. The Triage Agent then runs its multi-pass conversational Mode B flow, asking its own follow-up questions.
 
 **Path 3: Emergency escalation — stop**
 
@@ -514,14 +514,14 @@ When urgency reaches `"emergency"` during questioning, the Intake Agent issues t
 
 ### How Uncommon Symptoms Are Detected
 
-The detection mechanism is in `_build_detect_symptom_node`. The `clarification_attempts` counter increments each time the LLM returns no valid symptom names from the patient's message. On the third failure (i.e., after three consecutive unrecognised messages):
+The detection mechanism is in `_build_detect_symptom_node`. On the patient's very first message, if the LLM returns no valid symptom names, the node immediately triggers the uncommon path — there are no clarification attempts:
 
 1. `uncommon_symptom` is set to True in state
-2. `raw_complaint` is set to the patient's first human message (not the most recent one — the original complaint before any clarification attempts)
+2. `raw_complaint` is set to the patient's message (the original complaint, verbatim)
 3. `intake_complete` is set to True to signal that the intake flow should exit
 4. A handoff message is appended explaining the transfer to the diagnostic system
 
-The patient's first message is used as the raw complaint rather than the most recent one because the clarification loop may have prompted increasingly specific re-descriptions that diverge from the original presentation. The Triage Agent's Mode B Pass 1 retrieval works best with the patient's unfiltered initial complaint.
+The patient's original message is used as the raw complaint because it contains their spontaneous, unguided description of their complaint. The Triage Agent's Mode B Pass 1 retrieval works best with the patient's unfiltered initial complaint.
 
 ### What Data Is Passed at Each Routing Point
 
@@ -540,7 +540,7 @@ python agents/intake_agent.py
 This single command runs the complete patient journey:
 
 1. Patient types their complaint
-2. Intake Agent conducts multi-turn interview (or routes to uncommon path after 3 failures)
+2. Intake Agent conducts multi-turn interview (or routes immediately to uncommon path if symptom not recognised)
 3. Intake Agent generates clinician handover summary
 4. CLI auto-routes to Triage Agent (Mode A or Mode B depending on outcome)
 5. Triage Agent produces diagnosis report
@@ -556,15 +556,15 @@ The `IntakeState` TypedDict contains two fields added specifically to support Tr
 
 ### `uncommon_symptom: bool`
 
-Default: `False`. Set to `True` by `_build_detect_symptom_node` when the `clarification_attempts` counter reaches 3 and no valid symptom has been detected. Once True, this field signals to the session manager (`IntakeSession`) that the intake has concluded via the uncommon path and that the Triage Agent's Mode B should be invoked. The `is_uncommon()` method reads this field indirectly via `self._phase == "uncommon"`.
+Default: `False`. Set to `True` by `_build_detect_symptom_node` when the patient's first message does not match any of the 11 canonical symptoms. The routing is immediate — no clarification attempts are made. Once True, this field signals to the session manager (`IntakeSession`) that the intake has concluded via the uncommon path and that the Triage Agent's Mode B should be invoked. The `is_uncommon()` method reads this field indirectly via `self._phase == "uncommon"`.
 
 This field is distinct from `intake_complete`. Both become True simultaneously on the uncommon path. `intake_complete` signals that no further questions should be asked; `uncommon_symptom` signals which triage path to take.
 
 ### `raw_complaint: str`
 
-Default: `""` (empty string). Set to the text of the patient's first `HumanMessage` when the uncommon routing is triggered. This is the verbatim text of the patient's opening message, captured before any clarification prompts were issued.
+Default: `""` (empty string). Set to the text of the patient's message when the uncommon routing is triggered. This is the verbatim text of the patient's opening message — because the routing is immediate (no clarification loop), this is always the patient's first and only message at the point of handoff.
 
-The first human message is specifically used rather than the most recent one because the first message contains the patient's spontaneous, unguided description of their complaint. Subsequent messages in the clarification loop are shaped by the Intake Agent's prompts and may be narrower or more constrained than the original complaint. The Triage Agent's Mode B uses this string as the seed for its first retrieval pass, so fidelity to the patient's original presentation matters.
+The Triage Agent's Mode B uses this string as the seed for its first retrieval pass, so fidelity to the patient's original spontaneous presentation matters. Since there are no clarification iterations that could reshape the description, the raw complaint is always the patient's unguided initial statement.
 
 The full updated state table including these two fields:
 
@@ -586,7 +586,7 @@ The full updated state table including these two fields:
 | `escalated` | `bool` | True if emergency directive was issued. |
 | `intake_complete` | `bool` | True when all questions answered or uncommon path triggered. |
 | `summary` | `str` | The generated nine-section clinician handover note. |
-| `clarification_attempts` | `int` | Failed symptom detection count. Triggers uncommon path at 3. |
+| `clarification_attempts` | `int` | Legacy field. Always 0 — uncommon path is triggered immediately on detection failure, not after repeated attempts. |
 | `uncommon_symptom` | `bool` | True if symptom not in the 11 canonical symptom categories. Triggers Triage Agent Mode B. |
 | `raw_complaint` | `str` | Patient's first message, captured for Triage Agent Mode B handoff. |
 
@@ -606,7 +606,7 @@ Processes a patient response. Returns the next question, follow-up, emergency di
 
 **`IntakeSession.is_complete() → bool`**
 
-Returns True when the intake has concluded — either via the full question-answer flow (common path) or via the uncommon symptom detection (3 failed clarification attempts). Returns True for both the `"done"` and `"uncommon"` phases.
+Returns True when the intake has concluded — either via the full question-answer flow (common path) or via the uncommon symptom detection (immediate routing when no common symptom matched). Returns True for both the `"done"` and `"uncommon"` phases.
 
 **`IntakeSession.is_uncommon() → bool`**
 
