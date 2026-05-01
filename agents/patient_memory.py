@@ -363,25 +363,31 @@ class PatientMemory:
 
         lines: list[str] = ["Known patient history:"]
 
-        # Conditions
+        # Conditions (handles both dict and string formats)
         conditions = profile.get("known_conditions", [])
         if conditions:
             cond_parts = []
             for c in conditions:
-                part = c.get("condition", "")
-                if c.get("since"):
-                    part += f" (since {c['since']})"
+                if isinstance(c, dict):
+                    part = c.get("condition", "")
+                    if c.get("since"):
+                        part += f" (since {c['since']})"
+                else:
+                    part = str(c)
                 cond_parts.append(part)
             lines.append(f"- Conditions: {', '.join(cond_parts)}")
 
-        # Medications
+        # Medications (handles both dict and string formats)
         medications = profile.get("medications", [])
         if medications:
             med_parts = []
             for m in medications:
-                part = m.get("medication", "")
-                if m.get("for"):
-                    part += f" (for {m['for']})"
+                if isinstance(m, dict):
+                    part = m.get("medication", "")
+                    if m.get("for"):
+                        part += f" (for {m['for']})"
+                else:
+                    part = str(m)
                 med_parts.append(part)
             lines.append(f"- Medications: {', '.join(med_parts)}")
 
@@ -451,10 +457,16 @@ class PatientMemory:
         if smoking and smoking.get("status"):
             confirm_items.append(f"smoking history ({_format_smoking(smoking)})")
         if conditions:
-            cond_summary = ", ".join(c.get("condition", "") for c in conditions)
+            cond_summary = ", ".join(
+                c.get("condition", "") if isinstance(c, dict) else str(c)
+                for c in conditions
+            )
             confirm_items.append(f"conditions ({cond_summary})")
         if medications:
-            med_summary = ", ".join(m.get("medication", "") for m in medications)
+            med_summary = ", ".join(
+                m.get("medication", "") if isinstance(m, dict) else str(m)
+                for m in medications
+            )
             confirm_items.append(f"medications ({med_summary})")
         if allergies:
             confirm_items.append("allergies")
