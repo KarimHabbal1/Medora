@@ -568,7 +568,23 @@ def filter_medqa_to_textbook(
         if not correct_answer.strip() or not question_text.strip():
             continue
 
-        # Ask GPT-4o-mini whether this condition is in our textbook
+        # First check: is this answer actually a DIAGNOSIS (not a treatment/mechanism/test)?
+        try:
+            dx_check = judge_llm.invoke([
+                SystemMessage(content=(
+                    "You classify medical answers. Is this answer a DIAGNOSIS "
+                    "(a disease, condition, or syndrome)? Or is it something else "
+                    "(a treatment, drug, mechanism, lab test, inheritance pattern, procedure)?\n\n"
+                    "Respond with ONLY one word: diagnosis  or  other"
+                )),
+                HumanMessage(content=f"Answer: {correct_answer.strip()}"),
+            ])
+            if dx_check.content.strip().lower().split()[0] != "diagnosis":
+                continue
+        except Exception:
+            continue
+
+        # Then check: is this diagnosis covered in our textbook?
         filter_prompt = _MEDQA_FILTER_TEMPLATE.format(
             chapters_list=chapters_list_str,
             diagnosis=correct_answer.strip(),
