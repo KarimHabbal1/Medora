@@ -1,0 +1,98 @@
+{
+  "clinical_question": "latest CDC adult pneumococcal vaccine recommendations",
+  "sanitized_query": "latest CDC adult pneumococcal vaccine recommendations guideline recommendation updated WHO CDC NICE NIH PubMed",
+  "summary": "No reliable web evidence could be retrieved for this clinical question. This preliminary result requires clinician judgment and should not be used as a final diagnosis.",
+  "key_findings": [],
+  "conflicts": [],
+  "limitations": [
+    "missing_searxng_base_url"
+  ],
+  "sources": [],
+  "council_review": {
+    "source_validator": {
+      "role": "source_validator",
+      "decision": "reject",
+      "reason": "No reliable Tier 1 or Tier 2 sources were available.",
+      "details": {
+        "tier_1": 0,
+        "tier_2": 0,
+        "tier_3": 0,
+        "unknown": 0,
+        "rejected_domains": []
+      }
+    },
+    "recency_checker": {
+      "role": "recency_checker",
+      "decision": "accept",
+      "reason": "Source recency is acceptable for preliminary evidence review.",
+      "details": {
+        "recent_sources": [],
+        "missing_dates": [],
+        "old_sources": []
+      }
+    },
+    "conflict_checker": {
+      "role": "conflict_checker",
+      "decision": "accept_with_caution",
+      "reason": "No explicit conflict found; deterministic checker is limited.",
+      "details": {
+        "conflicts": [],
+        "mode": "deterministic"
+      }
+    },
+    "safety_critic": {
+      "role": "safety_critic",
+      "decision": "accept_with_caution",
+      "reason": "No extractive claims were available for safety review.",
+      "details": {
+        "mode": "deterministic"
+      }
+    },
+    "final_reviewer": {
+      "role": "final_reviewer",
+      "decision": "reject",
+      "reason": "At least one council role rejected the evidence.",
+      "details": {
+        "mode": "deterministic"
+      }
+    },
+    "claim_extractor": {
+      "role": "medical_claim_extractor",
+      "decision": "reject",
+      "reason": "Deterministic claim extraction completed.",
+      "details": {
+        "mode": "deterministic",
+        "claim_count": 0
+      }
+    }
+  },
+  "final_decision": "reject",
+  "privacy_report": {
+    "removed_identifiers": [],
+    "kept_medical_context": [],
+    "deidentified": true
+  },
+  "execution_metadata": {
+    "approach": {
+      "name": "deterministic_only",
+      "description": "Deterministic search, ranking, claim extraction, council, and synthesis. No local LLM.",
+      "use_llm_claim_extraction": false,
+      "use_llm_conflict_checking": false,
+      "use_llm_safety_review": false,
+      "use_llm_final_review": false,
+      "use_llm_synthesis": false,
+      "deterministic_safety_after_synthesis": false,
+      "llm_provider": "none"
+    },
+    "llm_provider": "none",
+    "llm_model": null,
+    "llm_failure_count": 0,
+    "deterministic_fallback_count": 0,
+    "synthesis": {
+      "mode": "deterministic",
+      "llm_used": false,
+      "llm_failure": false,
+      "deterministic_fallback": false
+    }
+  }
+}
