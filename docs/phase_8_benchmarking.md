@@ -669,6 +669,22 @@ The MedCaseReasoning dataset is derived from published case reports. Published c
 
 The benchmark measures accuracy against ground truth diagnoses, but does not compare against human physician performance on the same cases. It is therefore impossible to say whether 74% pipeline accuracy on textbook cases is "good" relative to human performance — it could be above or below physician accuracy on the same presentations. A comparative study with physician participants would provide the normative context that the current benchmark lacks.
 
+### Benchmark Bypasses the Full Pipeline Flow
+
+The current benchmark tests only the RAG retrieval + diagnosis generation step. It does NOT run the complete Medora pipeline, which includes:
+- Intake Agent structured questioning (5-8 questions with follow-ups)
+- Triage Agent sufficiency check (criteria extraction, gap analysis)
+- Triage Agent follow-up questions (2-3 targeted questions based on textbook gaps)
+- Re-retrieval with enriched context after follow-ups
+
+The deployed system would perform better than these benchmark numbers suggest because it collects significantly more clinical information through the interactive questioning flow. The benchmark presents a pre-written case directly to the RAG pipeline — it does not simulate the iterative information-gathering that the real system performs.
+
+**Future work:** Build a full-pipeline benchmark that simulates the entire flow, using an LLM to play the "patient" role — answering intake questions and triage follow-ups based on the case description. This would measure end-to-end diagnostic accuracy including the information-gathering stages.
+
+### Judge Accuracy on Ollama Model Output
+
+Early Gemma 27B benchmark results showed anomalously low accuracy (0% match rate on cases where the diagnosis was clearly correct — e.g., "Diabetic Ketoacidosis (DKA)" scored as mismatch against ground truth "Diabetic ketoacidosis"). This suggests the GPT-5.4-mini judge may struggle with Ollama model output formatting differences (extra markdown, different capitalization patterns, confidence level annotations). The judge prompt may need adjustment for non-OpenAI model outputs.
+
 ---
 
 ## Connection to Prior Phases
