@@ -92,6 +92,20 @@ OLLAMA_MODELS = [
         "timeout_seconds": 600,
     },
     {
+        "name": "qwen3-32b",
+        "provider": "ollama",
+        "model_id": "qwen3:32b",
+        "description": "Latest Qwen, strong reasoning, fits in A10G VRAM",
+        "timeout_seconds": 600,
+    },
+    {
+        "name": "llama3.3-70b",
+        "provider": "ollama",
+        "model_id": "llama3.3:70b",
+        "description": "Newest Llama 70B — CPU offload, slow but strongest open-source",
+        "timeout_seconds": 900,
+    },
+    {
         "name": "aloe-8b",
         "provider": "ollama",
         "model_id": "aloe-8b",
