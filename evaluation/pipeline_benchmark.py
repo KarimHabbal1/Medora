@@ -6,7 +6,7 @@ derived from the textbook itself (ground truth retrieval validation) and on
 filtered MedQA USMLE questions (external clinical validity).
 
 Part 1 — generate_textbook_cases
-    Samples chunks from ChromaDB and uses GPT-4o to generate realistic patient
+    Samples chunks from ChromaDB and uses GPT-5.4-mini to generate realistic patient
     presentations for conditions described in the textbook. Because we know
     exactly which chunks contain the answer, this gives precise retrieval metrics.
 
@@ -23,9 +23,9 @@ Part 3 — PipelineBenchmarkRunner
 Usage:
     python evaluation/pipeline_benchmark.py --generate --num-cases 50
     python evaluation/pipeline_benchmark.py --filter-medqa --num-cases 50
-    python evaluation/pipeline_benchmark.py --run --test-set textbook
-    python evaluation/pipeline_benchmark.py --run --test-set medqa
-    python evaluation/pipeline_benchmark.py --run --test-set both
+    python evaluation/pipeline_benchmark.py --run --profile api --test-set textbook
+    python evaluation/pipeline_benchmark.py --run --profile ollama --test-set both
+    python evaluation/pipeline_benchmark.py --run --models gpt-5.4-mini --test-set medqa
     python evaluation/pipeline_benchmark.py --generate --run --test-set textbook
 """
 
@@ -77,6 +77,21 @@ from agents.triage_agent import _DIAGNOSIS_SYSTEM, _chunks_to_context  # noqa: E
 from langchain_core.messages import HumanMessage, SystemMessage  # noqa: E402
 from langchain_openai import ChatOpenAI  # noqa: E402
 
+# ── Benchmark config ──────────────────────────────────────────────────────────
+from evaluation.benchmark_config import (  # noqa: E402
+    ALL_MODELS,
+    JUDGE_MODEL,
+    PROFILES,
+    get_models_by_names,
+    get_models_by_profile,
+)
+
+# Alias for backward compatibility within this module
+BENCHMARK_MODELS = ALL_MODELS
+
+TIMEOUT_OPENAI = 120
+TIMEOUT_OLLAMA = 300
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Paths
@@ -107,25 +122,6 @@ _DIAGNOSIS_QUESTION_PHRASES = [
     "most likely responsible",
     "most likely the cause",
 ]
-
-# ── Benchmark model configs (same format as benchmark.py) ─────────────────────
-BENCHMARK_MODELS: list[dict] = [
-    {"name": "gpt-4o",       "provider": "openai", "model_id": "gpt-4o"},
-    {"name": "gpt-4o-mini",  "provider": "openai", "model_id": "gpt-4o-mini"},
-    {
-        "name": "llama3.1-8b",
-        "provider": "ollama",
-        "model_id": "llama3.1:8b",
-    },
-    {
-        "name": "medllama2-7b",
-        "provider": "ollama",
-        "model_id": "medllama2:7b",
-    },
-]
-
-TIMEOUT_OPENAI = 120
-TIMEOUT_OLLAMA = 300
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -329,7 +325,7 @@ def generate_textbook_cases(
 
     Args:
         collection:  open ChromaDB collection (tmt_chunks)
-        llm:         ChatOpenAI instance for case generation (gpt-4o recommended)
+        llm:         ChatOpenAI instance for case generation (gpt-5.4-mini recommended)
         num_cases:   target number of cases to generate
         chapters:    if provided, restrict sampling to these chapters only
 
@@ -499,8 +495,8 @@ def filter_medqa_to_textbook(
     Args:
         collection:  open ChromaDB collection (used to enumerate chapters)
         num_cases:   maximum number of cases to keep
-        judge_llm:   ChatOpenAI instance (gpt-4o-mini) for coverage check.
-                     If None, a gpt-4o-mini instance is created automatically.
+        judge_llm:   ChatOpenAI instance (gpt-5.4-mini) for coverage check.
+                     If None, a gpt-5.4-mini instance is created automatically.
 
     Returns:
         List of case dicts, each with:
@@ -509,7 +505,7 @@ def filter_medqa_to_textbook(
     EVAL_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     if judge_llm is None:
-        judge_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+        judge_llm = ChatOpenAI(model=JUDGE_MODEL, temperature=0)
 
     # ── Load chapters from ChromaDB ────────────────────────────────────────────
     print("\nFetching textbook chapters from ChromaDB...")
@@ -647,7 +643,7 @@ class PipelineBenchmarkRunner:
         test_cases: list[dict],
         models: list[dict],
         ollama_url: str = "http://localhost:11434",
-        judge_model: str = "gpt-4o-mini",
+        judge_model: str = JUDGE_MODEL,
         retrieve_k: int = RERANK_TOP_K_RETRIEVE,
         return_k: int = RERANK_TOP_K_RETURN,
     ):
@@ -1182,13 +1178,26 @@ def _parse_args() -> argparse.Namespace:
         help="Number of cases to generate or filter",
     )
     parser.add_argument(
+        "--profile",
+        default=None,
+        choices=list(PROFILES.keys()),
+        metavar="PROFILE",
+        help=(
+            "Execution profile: api (OpenAI models, run locally), "
+            "ollama (local models, run on EC2), quick, api-ceiling, full. "
+            f"Available: {list(PROFILES.keys())}. "
+            "Overridden by --models if both are specified."
+        ),
+    )
+    parser.add_argument(
         "--models",
         nargs="+",
         default=None,
         metavar="MODEL_NAME",
         help=(
-            "Model names to benchmark (must match 'name' in BENCHMARK_MODELS). "
-            "Default: all configured models."
+            "Specific model names to benchmark (must match 'name' in benchmark_config.py). "
+            "Overrides --profile. "
+            f"Available: {[m['name'] for m in ALL_MODELS]}."
         ),
     )
     parser.add_argument(
@@ -1199,13 +1208,13 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--judge-model",
-        default="gpt-4o-mini",
+        default=JUDGE_MODEL,
         metavar="MODEL",
         help="OpenAI model to use as the diagnosis match judge",
     )
     parser.add_argument(
         "--generate-model",
-        default="gpt-4o",
+        default=JUDGE_MODEL,
         metavar="MODEL",
         help="OpenAI model to use for test case generation",
     )
@@ -1240,17 +1249,22 @@ def main() -> None:
     EVAL_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     # ── Select models ─────────────────────────────────────────────────────────
-    model_name_map = {m["name"]: m for m in BENCHMARK_MODELS}
-
     if args.models:
-        unknown = [n for n in args.models if n not in model_name_map]
-        if unknown:
-            print(f"[ERROR] Unknown model name(s): {unknown}", file=sys.stderr)
-            print(f"  Available: {list(model_name_map.keys())}", file=sys.stderr)
+        # --models takes priority over --profile
+        selected_models = get_models_by_names(args.models)
+        if not selected_models:
+            print(
+                f"[ERROR] No valid models found in: {args.models}\n"
+                f"  Available: {[m['name'] for m in ALL_MODELS]}",
+                file=sys.stderr,
+            )
             sys.exit(1)
-        selected_models = [model_name_map[n] for n in args.models]
+    elif args.profile:
+        selected_models = get_models_by_profile(args.profile)
+        print(f"  Profile '{args.profile}': {PROFILES[args.profile]['description']}")
     else:
-        selected_models = BENCHMARK_MODELS
+        # Default: all models
+        selected_models = ALL_MODELS
 
     print("\n" + "=" * 70)
     print("  Medora — Pipeline Benchmark")

@@ -9,10 +9,10 @@ The RAG infrastructure (bi-encoder, reranker, ChromaDB) is loaded once and share
 across all model runs to ensure fair comparison.
 
 Usage:
-    python evaluation/benchmark.py
-    python evaluation/benchmark.py --models gpt-4o gpt-4o-mini
-    python evaluation/benchmark.py --num-cases 100 --ollama-url http://my-ec2:11434
-    python evaluation/benchmark.py --num-cases 897 --output-dir data/results/benchmark
+    python evaluation/benchmark.py --profile api
+    python evaluation/benchmark.py --profile ollama --ollama-url http://my-ec2:11434
+    python evaluation/benchmark.py --models gpt-5.4-mini
+    python evaluation/benchmark.py --num-cases 100 --output-dir data/results/benchmark
 """
 
 from __future__ import annotations
@@ -61,50 +61,19 @@ from agents.triage_agent import _DIAGNOSIS_SYSTEM, _chunks_to_context  # noqa: E
 from langchain_core.messages import HumanMessage, SystemMessage  # noqa: E402
 from langchain_openai import ChatOpenAI  # noqa: E402
 
+# ── Benchmark config ──────────────────────────────────────────────────────────
+from evaluation.benchmark_config import (  # noqa: E402
+    ALL_MODELS,
+    JUDGE_MODEL,
+    PROFILES,
+    get_models_by_names,
+    get_models_by_profile,
+)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Model configurations
-# ─────────────────────────────────────────────────────────────────────────────
+# Alias for backward compatibility within this module
+BENCHMARK_MODELS = ALL_MODELS
 
-BENCHMARK_MODELS: list[dict] = [
-    {
-        "name": "gpt-4o",
-        "provider": "openai",
-        "model_id": "gpt-4o",
-    },
-    {
-        "name": "gpt-4o-mini",
-        "provider": "openai",
-        "model_id": "gpt-4o-mini",
-    },
-    {
-        "name": "llama3.1-70b",
-        "provider": "ollama",
-        "model_id": "llama3.1:70b-instruct-q4_K_M",
-    },
-    {
-        "name": "gemma2-27b",
-        "provider": "ollama",
-        "model_id": "gemma2:27b",
-    },
-    {
-        "name": "phi4-14b",
-        "provider": "ollama",
-        "model_id": "phi4:14b",
-    },
-    {
-        "name": "llama3.1-8b",
-        "provider": "ollama",
-        "model_id": "llama3.1:8b",
-    },
-    {
-        "name": "medllama2-7b",
-        "provider": "ollama",
-        "model_id": "medllama2:7b",
-    },
-]
-
-# Timeout (seconds) per case
+# Timeout (seconds) per case — sourced from model config when available
 TIMEOUT_OPENAI = 120
 TIMEOUT_OLLAMA = 300
 
@@ -252,7 +221,7 @@ def _judge_diagnosis_match(
     judge_llm,
 ) -> str:
     """
-    Use the judge LLM (gpt-4o-mini) to determine whether the system's diagnosis
+    Use the judge LLM (gpt-5.4-mini) to determine whether the system's diagnosis
     matches the ground truth.
 
     Returns one of:
@@ -325,7 +294,7 @@ class BenchmarkRunner:
         dataset_split: str = "test",
         num_cases: int | None = None,
         ollama_url: str = "http://localhost:11434",
-        judge_model: str = "gpt-4o-mini",
+        judge_model: str = JUDGE_MODEL,
         retrieve_k: int = RERANK_TOP_K_RETRIEVE,
         return_k: int = RERANK_TOP_K_RETURN,
     ):
@@ -744,13 +713,26 @@ def _parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
+        "--profile",
+        default=None,
+        choices=list(PROFILES.keys()),
+        metavar="PROFILE",
+        help=(
+            "Execution profile: api (OpenAI models, run locally), "
+            "ollama (local models, run on EC2), quick, api-ceiling, full. "
+            f"Available: {list(PROFILES.keys())}. "
+            "Overridden by --models if both are specified."
+        ),
+    )
+    parser.add_argument(
         "--models",
         nargs="+",
         default=None,
         metavar="MODEL_NAME",
         help=(
-            "Model names to benchmark (must match 'name' field in BENCHMARK_MODELS). "
-            "Default: all configured models."
+            "Specific model names to benchmark (must match 'name' in benchmark_config.py). "
+            "Overrides --profile. "
+            f"Available: {[m['name'] for m in ALL_MODELS]}."
         ),
     )
     parser.add_argument(
@@ -774,7 +756,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--judge-model",
-        default="gpt-4o-mini",
+        default=JUDGE_MODEL,
         metavar="MODEL",
         help="OpenAI model to use as the diagnosis match judge.",
     )
@@ -805,17 +787,22 @@ def main() -> None:
     args = _parse_args()
 
     # ── Select models ─────────────────────────────────────────────────────────
-    model_name_map = {m["name"]: m for m in BENCHMARK_MODELS}
-
     if args.models:
-        unknown = [n for n in args.models if n not in model_name_map]
-        if unknown:
-            print(f"[ERROR] Unknown model name(s): {unknown}", file=sys.stderr)
-            print(f"  Available: {list(model_name_map.keys())}", file=sys.stderr)
+        # --models takes priority over --profile
+        selected_models = get_models_by_names(args.models)
+        if not selected_models:
+            print(
+                f"[ERROR] No valid models found in: {args.models}\n"
+                f"  Available: {[m['name'] for m in ALL_MODELS]}",
+                file=sys.stderr,
+            )
             sys.exit(1)
-        selected_models = [model_name_map[n] for n in args.models]
+    elif args.profile:
+        selected_models = get_models_by_profile(args.profile)
+        print(f"  Profile '{args.profile}': {PROFILES[args.profile]['description']}")
     else:
-        selected_models = BENCHMARK_MODELS
+        # Default: all models
+        selected_models = ALL_MODELS
 
     num_cases = min(args.num_cases, 897)
     output_dir = PROJECT_ROOT / args.output_dir
