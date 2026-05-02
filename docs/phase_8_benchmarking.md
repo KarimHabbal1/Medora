@@ -457,15 +457,100 @@ What these results mean for the deployed Medora system:
 
 ---
 
+---
+
+## Model Comparison
+
+### Test Set A — Textbook Cases (50 cases each)
+
+| Model | Type | Accuracy | Exact | Semantic | Partial | Mismatch | Gen-only fail | Ret-only fail | Retrieval Recall | JSON errors | Mean Latency |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| GPT-5.4-mini | API (frontier) | 74% | 2% | 72% | 18% | 8% | 14% | 18% | 70% | 0% | 15.6s |
+| Llama 3.1 8B | Open-source general | 42% | 6% | 36% | 24% | 34% | 32% | 4% | 70% | 0% | 36.5s |
+| Gemma 2 27B | Open-source general | 40% | 8% | 32% | 24% | 36% | 36% | 6% | 70% | 0% | 54.4s |
+| Aloe-8B | Medical fine-tune (Llama 3.1) | 36% | 10% | 26% | 22% | 42% | 38% | 4% | 70% | 0% | 37.6s |
+| MedLlama2 7B | Medical fine-tune (Llama 2) | Failed | — | — | — | — | — | — | — | — | — |
+| DeepSeek-R1 14B | Reasoning model | Pending | | | | | | | | | |
+| Qwen2.5 32B | Open-source general | Pending | | | | | | | | | |
+
+### Test Set B — MedQA USMLE (50 cases, GPT-5.4-mini only so far)
+
+| Model | Accuracy | Retrieval Recall | Gen-only fail | Mean Latency |
+|---|---|---|---|---|
+| GPT-5.4-mini | 64% | 42% | 12% | 12.2s |
+
+### Test Set C — MedCaseReasoning (50 cases, GPT-5.4-mini only so far)
+
+| Model | Accuracy | Retrieval Recall | Mean Latency |
+|---|---|---|---|
+| GPT-5.4-mini | 30% | 22% | 20.8s |
+
+---
+
+## Key Findings from Model Comparison
+
+### Finding: Medical Fine-Tuning Doesn't Help with RAG
+
+The most surprising result: Aloe-8B (medical fine-tune of Llama 3.1 8B) scored LOWER than its base model Llama 3.1 8B (36% vs 42%). MedLlama2-7B failed entirely — couldn't follow the structured output format.
+
+This suggests medical fine-tuning may HURT performance when RAG provides the evidence, because:
+- The fine-tuned model may anchor on its trained medical knowledge instead of reasoning from the retrieved passages
+- Medical fine-tuning datasets don't include "reason from provided evidence" tasks — they train on medical QA without retrieval context
+- Instruction-following quality (which general instruct models excel at) matters more than domain knowledge when the domain knowledge is provided via RAG
+
+This parallels findings across the entire pipeline:
+- Phase 2.1: General embedding model (embeddinggemma-300m-medical) outperformed older biomedical models
+- Phase 3: General cross-encoder (BGE) outperformed medical cross-encoder (MedCPT)
+- Phase 8: General LLMs outperform medical fine-tuned LLMs when RAG is present
+
+The consistent pattern: **modern general-purpose models + RAG outperform domain-specific models at every level of the pipeline.**
+
+### Finding: Model Size Doesn't Linearly Predict Accuracy
+
+Gemma 2 27B (40%) barely outperformed Llama 3.1 8B (42% — actually slightly higher). A 3.4x larger model provided no accuracy improvement. This suggests the accuracy ceiling for open-source models on this task may be around 40-42% without architectural improvements (e.g., chain-of-thought reasoning like DeepSeek-R1).
+
+### Finding: The API-to-Open-Source Gap is Large
+
+GPT-5.4-mini (74%) vs best open-source (42%) = 32 percentage point gap. This is entirely in reasoning — retrieval recall is identical (70%). Both see the same textbook evidence, but GPT-5.4-mini reasons from it correctly nearly twice as often.
+
+### Finding: MedLlama2 Failure Demonstrates the Instruction-Following Prerequisite
+
+MedLlama2-7B (Llama 2 base, medical fine-tuned) couldn't produce the structured "## Primary Diagnosis" format and timed out on complex cases. Domain knowledge without instruction-following capability is worthless for our pipeline. This is why all recommended models must be instruction-tuned.
+
+### Finding: All Models Achieve 0% JSON Error Rate
+
+Every model that successfully ran (GPT-5.4-mini, Llama 3.1 8B, Gemma 2 27B, Aloe-8B) produced parseable output in 100% of cases. This means the diagnosis prompt template works reliably across model architectures.
+
+---
+
+## Models Researched but Not Yet Benchmarked
+
+Based on research, the following models were identified as top candidates and are being downloaded for benchmarking:
+
+| Model | Size | Why promising | Status |
+|---|---|---|---|
+| DeepSeek-R1-Distill-Qwen-14B | 14B | Chain-of-thought reasoning distilled from 93% USMLE parent. May close the reasoning gap. | Running on EC2 |
+| Qwen2.5-32B-Instruct | 32B | Largest model fitting A10G. Excellent structured output. Foundation of SOTA medical model. | Running on EC2 |
+| Llama3.1-Aloe-Beta-8B | 8B | Already benchmarked (36%). Best medical fine-tune at 8B but underperformed base model with RAG. | Done |
+
+---
+
 ### Remaining Benchmarks
 
 | Test | Models | Status |
 |---|---|---|
-| Test Set A (textbook) + GPT-5.4-mini | Done | 74% accuracy |
-| Test Set B (MedQA) + GPT-5.4-mini | Done | 64% accuracy |
-| Test Set C (MedCaseReasoning) + GPT-5.4-mini | Done | 30% accuracy |
-| Test Set A + GPT-5.4 | Pending | Ceiling benchmark |
-| All test sets + all Ollama models | Pending | EC2 (open-source comparison) |
+| Test Set A + GPT-5.4-mini | Done | 74% |
+| Test Set A + Llama 3.1 8B | Done | 42% |
+| Test Set A + Gemma 2 27B | Done | 40% |
+| Test Set A + Aloe-8B | Done | 36% |
+| Test Set A + MedLlama2 7B | Done | Failed |
+| Test Set A + DeepSeek-R1 14B | Running | Pending |
+| Test Set A + Qwen2.5 32B | Running | Pending |
+| Test Set B + GPT-5.4-mini | Done | 64% |
+| Test Set C + GPT-5.4-mini | Done | 30% |
+| Test Set B + open-source models | Not started | After Set A comparison |
+| Test Set C + open-source models | Not started | After Set A comparison |
+| GPT-5.4 ceiling benchmark | Not started | 10 cases per test set |
 
 ---
 
