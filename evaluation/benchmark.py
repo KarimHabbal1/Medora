@@ -297,25 +297,30 @@ class BenchmarkRunner:
         judge_model: str = JUDGE_MODEL,
         retrieve_k: int = RERANK_TOP_K_RETRIEVE,
         return_k: int = RERANK_TOP_K_RETURN,
+        no_rag: bool = False,
     ):
         self.models = models
         self.ollama_url = ollama_url
         self.retrieve_k = retrieve_k
         self.return_k = return_k
+        self.no_rag = no_rag
 
         # ── Load dataset ──────────────────────────────────────────────────────
         self.cases = _load_dataset(dataset_split, num_cases)
 
-        # ── Load RAG pipeline (shared) ────────────────────────────────────────
-        print("\nLoading RAG pipeline (shared across all models)...")
-        self._device = detect_device()
-        self._collection = open_collection(CHROMA_DIR)
-        self._bi_encoder = load_bi_encoder(EMBEDDING_MODEL, self._device)
-        self._reranker, self._reranker_device = load_cross_encoder(RERANKER_MODEL)
-        print(
-            f"  RAG pipeline ready "
-            f"(bi-encoder on {self._device}, reranker on {self._reranker_device})"
-        )
+        # ── Load RAG pipeline (shared) — skip if --no-rag ────────────────────
+        if not no_rag:
+            print("\nLoading RAG pipeline (shared across all models)...")
+            self._device = detect_device()
+            self._collection = open_collection(CHROMA_DIR)
+            self._bi_encoder = load_bi_encoder(EMBEDDING_MODEL, self._device)
+            self._reranker, self._reranker_device = load_cross_encoder(RERANKER_MODEL)
+            print(
+                f"  RAG pipeline ready "
+                f"(bi-encoder on {self._device}, reranker on {self._reranker_device})"
+            )
+        else:
+            print("\n  [NO-RAG MODE] Skipping RAG pipeline — raw model output only.")
 
         # ── Load judge model ──────────────────────────────────────────────────
         print(f"\nLoading judge model ({judge_model})...")
@@ -374,35 +379,39 @@ class BenchmarkRunner:
         t_start = time.perf_counter()
 
         try:
-            # ── Step 1: RAG retrieval + reranking ─────────────────────────────
-            chunks = retrieve_and_rerank(
-                case_prompt,
-                self._collection,
-                self._bi_encoder,
-                self._reranker,
-                self.retrieve_k,
-                self.return_k,
-            )
+            if self.no_rag:
+                # ── NO-RAG MODE: give case directly to LLM ──────────────────
+                user_content = (
+                    f"Patient presentation:\n{case_prompt}\n\n"
+                    f"Based on your medical knowledge, produce a structured diagnosis report."
+                )
+            else:
+                # ── Step 1: RAG retrieval + reranking ─────────────────────────
+                chunks = retrieve_and_rerank(
+                    case_prompt,
+                    self._collection,
+                    self._bi_encoder,
+                    self._reranker,
+                    self.retrieve_k,
+                    self.return_k,
+                )
 
-            # ── Step 2: Check retrieval relevance ─────────────────────────────
-            # A chunk is considered relevant if the ground truth diagnosis
-            # (or key words from it) appears anywhere in the retrieved text.
-            gt_words = set(ground_truth.lower().split())
-            for chunk in chunks:
-                chunk_text = chunk.get("text", "").lower()
-                # Match if at least 40% of GT words appear in the chunk
-                if gt_words:
-                    overlap = sum(1 for w in gt_words if w in chunk_text)
-                    if overlap / len(gt_words) >= 0.4:
-                        result["retrieval_relevant"] = True
-                        break
+                # ── Step 2: Check retrieval relevance ─────────────────────────
+                gt_words = set(ground_truth.lower().split())
+                for chunk in chunks:
+                    chunk_text = chunk.get("text", "").lower()
+                    if gt_words:
+                        overlap = sum(1 for w in gt_words if w in chunk_text)
+                        if overlap / len(gt_words) >= 0.4:
+                            result["retrieval_relevant"] = True
+                            break
 
-            # ── Step 3: Build prompt ──────────────────────────────────────────
-            context = _chunks_to_context(chunks)
-            user_content = (
-                f"Patient presentation:\n{case_prompt}\n\n"
-                f"Retrieved medical textbook passages:\n\n{context}"
-            )
+                # ── Step 3: Build prompt ──────────────────────────────────────
+                context = _chunks_to_context(chunks)
+                user_content = (
+                    f"Patient presentation:\n{case_prompt}\n\n"
+                    f"Retrieved medical textbook passages:\n\n{context}"
+                )
 
             prompt_tokens = _estimate_tokens(_DIAGNOSIS_SYSTEM + user_content)
 
@@ -780,6 +789,11 @@ def _parse_args() -> argparse.Namespace:
         metavar="N",
         help=f"Passages to keep after reranking (default: {RERANK_TOP_K_RETURN}).",
     )
+    parser.add_argument(
+        "--no-rag",
+        action="store_true",
+        help="Skip RAG retrieval — test raw model diagnostic ability only.",
+    )
     return parser.parse_args()
 
 
@@ -825,6 +839,7 @@ def main() -> None:
         judge_model=args.judge_model,
         retrieve_k=args.retrieve_k,
         return_k=args.return_k,
+        no_rag=args.no_rag,
     )
 
     # ── Run benchmark ─────────────────────────────────────────────────────────
