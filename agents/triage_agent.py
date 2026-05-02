@@ -56,11 +56,11 @@ from config import (  # noqa: E402
     RERANKER_MODEL,
     RERANK_TOP_K_RETRIEVE,
     RERANK_TOP_K_RETURN,
+    make_llm,
 )
 
 # ── LangGraph / LangChain imports ─────────────────────────────────────────────
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage  # noqa: E402
-from langchain_openai import ChatOpenAI  # noqa: E402
 from langgraph.graph import END, START, StateGraph  # noqa: E402
 from langgraph.graph.message import add_messages  # noqa: E402
 
@@ -240,7 +240,7 @@ def _deduplicate_chunks(
     return result, seen_ids
 
 
-def parse_intake_to_clinical_picture(intake_summary: dict, llm: ChatOpenAI) -> dict:
+def parse_intake_to_clinical_picture(intake_summary: dict, llm) -> dict:
     """
     Distill a raw intake summary into a clean clinical picture.
 
@@ -406,7 +406,7 @@ def _build_pass2_query(raw_complaint: str, patient_answers: dict) -> str:
 # Node builders
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _build_analyze_input_node(llm: ChatOpenAI):
+def _build_analyze_input_node(llm):
     """
     Determines mode from state. For common mode, parses the raw intake
     summary into a clean clinical picture (stripping question text,
@@ -446,7 +446,7 @@ def _build_analyze_input_node(llm: ChatOpenAI):
     return analyze_input
 
 
-def _build_check_sufficiency_node(llm: ChatOpenAI):
+def _build_check_sufficiency_node(llm):
     """
     Mode A only: Criteria-based sufficiency check.
 
@@ -707,7 +707,7 @@ def _build_retrieve_evidence_node(collection, bi_encoder, reranker, retrieve_k: 
     return retrieve_evidence
 
 
-def _build_generate_questions_node(llm: ChatOpenAI):
+def _build_generate_questions_node(llm):
     """
     Mode B, Pass 1 only.
     Uses retrieved chunks to generate 4-6 clinical questions.
@@ -804,7 +804,7 @@ def _build_process_answer_node():
     return process_answer
 
 
-def _build_evaluate_refinement_node(llm: ChatOpenAI):
+def _build_evaluate_refinement_node(llm):
     """
     Mode B only, runs after Pass 2 diagnosis.
     Evaluates whether any patient answer revealed a critical finding.
@@ -853,7 +853,7 @@ def _build_evaluate_refinement_node(llm: ChatOpenAI):
     return evaluate_refinement
 
 
-def _build_generate_diagnosis_node(llm: ChatOpenAI):
+def _build_generate_diagnosis_node(llm):
     """
     The core node. Produces the actual diagnosis from all retrieved chunks
     plus all available clinical context.
@@ -925,7 +925,7 @@ def _build_generate_diagnosis_node(llm: ChatOpenAI):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _build_graph(
-    llm: ChatOpenAI,
+    llm,
     collection,
     bi_encoder,
     reranker,
@@ -1201,12 +1201,14 @@ class TriageSession:
 
     def __init__(
         self,
-        llm_model: str = "gpt-4o",
+        llm_model: str = "gpt-4o-mini",
         retrieve_k: int = RERANK_TOP_K_RETRIEVE,
         return_k: int = RERANK_TOP_K_RETURN,
+        provider: str = None,
+        ollama_url: str = None,
     ):
         print("\nInitialising Triage Agent models...")
-        self._llm = ChatOpenAI(model=llm_model, temperature=0)
+        self._llm = make_llm(model=llm_model, provider=provider, ollama_url=ollama_url)
         self._device = detect_device()
         self._collection = open_collection(CHROMA_DIR)
         self._bi_encoder = load_bi_encoder(EMBEDDING_MODEL, self._device)
@@ -1488,9 +1490,24 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model",
-        default="gpt-4o",
+        default="gpt-4o-mini",
         metavar="MODEL",
-        help="OpenAI model name to use (e.g. gpt-4o, gpt-4o-mini).",
+        help=(
+            "Model name to use. OpenAI example: gpt-4o-mini. "
+            "Ollama example: gemma2:27b (auto-detected by the ':' separator)."
+        ),
+    )
+    parser.add_argument(
+        "--provider",
+        default=None,
+        choices=["openai", "ollama"],
+        help="LLM provider (auto-detected from model name if not specified).",
+    )
+    parser.add_argument(
+        "--ollama-url",
+        default=None,
+        metavar="URL",
+        help="Ollama server URL (default: http://localhost:11434).",
     )
     parser.add_argument(
         "--from-intake",
@@ -1567,6 +1584,8 @@ def main() -> None:
         llm_model=args.model,
         retrieve_k=args.retrieve_k,
         return_k=args.return_k,
+        provider=args.provider,
+        ollama_url=args.ollama_url,
     )
 
     # ── Mode 1: --from-intake ─────────────────────────────────────────────────

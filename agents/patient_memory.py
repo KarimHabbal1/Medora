@@ -54,7 +54,6 @@ from dotenv import load_dotenv  # noqa: E402
 load_dotenv(PROJECT_ROOT / ".env")
 
 from langchain_core.messages import HumanMessage, SystemMessage  # noqa: E402
-from langchain_openai import ChatOpenAI  # noqa: E402
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -232,7 +231,7 @@ class PatientMemory:
         patient_name: str,
         intake_summary: dict,
         diagnosis: dict,
-        llm: ChatOpenAI,
+        llm,
     ) -> dict:
         """Merge new session data into the patient's persistent profile.
 
@@ -245,7 +244,7 @@ class PatientMemory:
             patient_name:   Display name of the patient.
             intake_summary: The dict returned by IntakeSession.get_summary().
             diagnosis:      The dict returned by TriageSession.get_diagnosis().
-            llm:            A ChatOpenAI instance to use for extraction.
+            llm:            An LLM instance to use for extraction (OpenAI or Ollama).
 
         Returns:
             The updated profile dict (also persisted to disk).
@@ -755,9 +754,24 @@ def main() -> None:
     )
     parser.add_argument(
         "--model",
-        default="gpt-4o",
+        default="gpt-4o-mini",
         metavar="MODEL",
-        help="OpenAI model to use for the simulate update.",
+        help=(
+            "Model to use for the simulate update. "
+            "OpenAI example: gpt-4o-mini. Ollama example: gemma2:27b."
+        ),
+    )
+    parser.add_argument(
+        "--provider",
+        default=None,
+        choices=["openai", "ollama"],
+        help="LLM provider (auto-detected from model name if not specified).",
+    )
+    parser.add_argument(
+        "--ollama-url",
+        default=None,
+        metavar="URL",
+        help="Ollama server URL (default: http://localhost:11434).",
     )
     args = parser.parse_args()
 
@@ -794,7 +808,8 @@ def main() -> None:
 
     if args.simulate:
         print(f"\nSimulating a session update for '{args.patient}'...")
-        llm = ChatOpenAI(model=args.model, temperature=0)
+        from config import make_llm
+        llm = make_llm(model=args.model, provider=args.provider, ollama_url=args.ollama_url)
         intake_summary = _build_simulate_intake()
         diagnosis = _build_simulate_diagnosis()
         updated_profile = memory.update_from_session(

@@ -36,3 +36,42 @@ RERANK_TOP_K_RETURN = 3      # return this many after reranking
 
 # === Model Names ===
 LLM_MODEL = "openbiollm-8b"  # placeholder — decided after Phase 3
+
+# === LLM Configuration ===
+DEFAULT_LLM_PROVIDER = "openai"  # "openai" or "ollama"
+DEFAULT_LLM_MODEL = "gpt-4o-mini"
+OLLAMA_BASE_URL = "http://localhost:11434"
+
+
+def make_llm(model: str = None, provider: str = None, ollama_url: str = None, temperature: float = 0):
+    """Create an LLM instance — works with both OpenAI and Ollama.
+
+    Args:
+        model: model name/id. If it contains ":" it's treated as Ollama format.
+               Examples: "gpt-4o-mini" (OpenAI), "gemma2:27b" (Ollama)
+        provider: "openai" or "ollama". If None, auto-detected from model name.
+        ollama_url: Ollama server URL (default from config)
+        temperature: model temperature
+    """
+    if model is None:
+        model = DEFAULT_LLM_MODEL
+    if provider is None:
+        provider = DEFAULT_LLM_PROVIDER
+    if ollama_url is None:
+        ollama_url = OLLAMA_BASE_URL
+
+    # Auto-detect: if model contains ":" it's likely Ollama format (e.g. "gemma2:27b")
+    if ":" in model and provider == "openai":
+        provider = "ollama"
+
+    if provider == "openai":
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(model=model, temperature=temperature)
+    elif provider == "ollama":
+        try:
+            from langchain_community.chat_models import ChatOllama
+        except ImportError:
+            from langchain_ollama import ChatOllama
+        return ChatOllama(model=model, base_url=ollama_url, temperature=temperature)
+    else:
+        raise ValueError(f"Unknown LLM provider: {provider!r}. Use 'openai' or 'ollama'.")

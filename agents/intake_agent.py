@@ -45,7 +45,6 @@ load_dotenv(PROJECT_ROOT / ".env")
 from typing import Annotated, TypedDict  # noqa: E402
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage  # noqa: E402
-from langchain_openai import ChatOpenAI  # noqa: E402
 from langgraph.graph import END, START, StateGraph  # noqa: E402
 from langgraph.graph.message import add_messages  # noqa: E402
 
@@ -124,15 +123,17 @@ def _format_previous_qa(answers: dict) -> str:
     return "\n".join(lines)
 
 
-def _make_llm(model: str) -> ChatOpenAI:
-    return ChatOpenAI(model=model, temperature=0)
+def _make_llm(model: str, provider: str = None, ollama_url: str = None):
+    """Create an LLM — auto-detects OpenAI vs Ollama from model name."""
+    from config import make_llm
+    return make_llm(model=model, provider=provider, ollama_url=ollama_url)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Node builders
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _build_detect_symptom_node(llm: ChatOpenAI):
+def _build_detect_symptom_node(llm):
     """
     Detects one or more symptoms from the patient's message.
     Returns a JSON array of matched symptom names (Fix 4).
@@ -277,7 +278,7 @@ Return ONLY the JSON array.
     return detect_symptom
 
 
-def _build_merge_questions_node(llm: ChatOpenAI):
+def _build_merge_questions_node(llm):
     """
     Fix 4: Merges essential_questions from all detected symptom objects into
     a single deduplicated, logically ordered list (5-8 questions).
@@ -334,7 +335,7 @@ Return ONLY the JSON array. No explanation, no markdown."""
     return merge_questions
 
 
-def _build_prefill_from_initial_message_node(llm: ChatOpenAI):
+def _build_prefill_from_initial_message_node(llm):
     """
     Fix 6: Reviews the patient's initial message against the merged question list
     and pre-fills answers for anything already stated. Pre-filled questions are
@@ -393,7 +394,7 @@ Return ONLY valid JSON. No explanation, no markdown."""
     return prefill_from_initial_message
 
 
-def _build_ask_question_node(llm: ChatOpenAI):
+def _build_ask_question_node(llm):
     """
     Fix 1: Asks the next essential question conversationally, passing ALL previous
     Q&A pairs so the LLM can reference what the patient already said.
@@ -449,7 +450,7 @@ Rules:
     return ask_question
 
 
-def _build_ask_followup_node(llm: ChatOpenAI):
+def _build_ask_followup_node(llm):
     """
     Fix 2: Asks a targeted follow-up when the patient's previous answer was vague.
     Rephrases the same question more specifically, referencing what the patient said.
@@ -502,7 +503,7 @@ Rules:
     return ask_followup
 
 
-def _build_process_answer_node(llm: ChatOpenAI):
+def _build_process_answer_node(llm):
     """
     Fix 2 + Fix 3:
     - Records the patient's answer.
@@ -661,7 +662,7 @@ for "do you have risk factors for heart disease?"."""
     return process_answer
 
 
-def _build_escalate_node(llm: ChatOpenAI):
+def _build_escalate_node(llm):
     """Generates an emergency escalation message."""
     def escalate(state: IntakeState) -> dict:
         escalation_msg = AIMessage(
@@ -681,7 +682,7 @@ def _build_escalate_node(llm: ChatOpenAI):
     return escalate
 
 
-def _build_assess_urgency_node(llm: ChatOpenAI):
+def _build_assess_urgency_node(llm):
     """
     Final urgency classification against ALL pooled urgency_rules.
     Fix 4: uses all_urgency_rules (pooled from all symptoms).
@@ -738,7 +739,7 @@ Return ONLY valid JSON. No explanation, no markdown."""
     return assess_urgency
 
 
-def _build_generate_summary_node(llm: ChatOpenAI):
+def _build_generate_summary_node(llm):
     """
     Fix 4: Produces the structured clinician handover note covering ALL detected
     symptoms, with deduplicated specialty routing and workup lists.
@@ -855,7 +856,7 @@ Be precise and clinical. Use bullet points within sections. Omit empty sections 
 # Graph construction
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _build_graph(llm: ChatOpenAI) -> StateGraph:
+def _build_graph(llm) -> StateGraph:
     """Build and compile the LangGraph intake workflow."""
 
     detect_symptom_fn = _build_detect_symptom_node(llm)
@@ -955,8 +956,15 @@ class IntakeSession:
         summary = session.get_summary()
     """
 
-    def __init__(self, llm_model: str = "gpt-4o", skip_to_symptom: str | None = None, patient_context: str = ""):
-        self._llm = _make_llm(llm_model)
+    def __init__(
+        self,
+        llm_model: str = "gpt-4o-mini",
+        skip_to_symptom: str | None = None,
+        patient_context: str = "",
+        provider: str = None,
+        ollama_url: str = None,
+    ):
+        self._llm = _make_llm(llm_model, provider=provider, ollama_url=ollama_url)
         self._graph = _build_graph(self._llm)
         self._state: IntakeState = {
             "messages": [],
@@ -1207,9 +1215,24 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model",
-        default="gpt-4o",
+        default="gpt-4o-mini",
         metavar="MODEL",
-        help="OpenAI model name to use (e.g. gpt-4o, gpt-4o-mini).",
+        help=(
+            "Model name to use. OpenAI example: gpt-4o-mini. "
+            "Ollama example: gemma2:27b (auto-detected by the ':' separator)."
+        ),
+    )
+    parser.add_argument(
+        "--provider",
+        default=None,
+        choices=["openai", "ollama"],
+        help="LLM provider (auto-detected from model name if not specified).",
+    )
+    parser.add_argument(
+        "--ollama-url",
+        default=None,
+        metavar="URL",
+        help="Ollama server URL (default: http://localhost:11434).",
     )
     parser.add_argument(
         "--symptom",
@@ -1271,6 +1294,8 @@ def main() -> None:
         llm_model=args.model,
         skip_to_symptom=args.symptom,
         patient_context=intake_context,
+        provider=args.provider,
+        ollama_url=args.ollama_url,
     )
 
     # ── First turn ────────────────────────────────────────────────────────────
@@ -1310,7 +1335,7 @@ def main() -> None:
         print("=" * 50 + "\n")
 
         from agents.triage_agent import TriageSession as TriageSessionCls
-        triage = TriageSessionCls(llm_model=args.model)
+        triage = TriageSessionCls(llm_model=args.model, provider=args.provider, ollama_url=args.ollama_url)
         raw_complaint = session.get_raw_complaint()
         triage_response = triage.start_uncommon(raw_complaint)
         print(f"Agent: {triage_response}\n")
@@ -1351,7 +1376,7 @@ def main() -> None:
         else:
             print("\n  Routing to Triage Agent for diagnosis...\n")
             from agents.triage_agent import TriageSession as TriageSessionCls
-            triage = TriageSessionCls(llm_model=args.model)
+            triage = TriageSessionCls(llm_model=args.model, provider=args.provider, ollama_url=args.ollama_url)
             # Inject patient history context for the Triage Agent
             triage_ctx = memory.get_context_for_triage(patient_name)
             if triage_ctx:
@@ -1406,7 +1431,7 @@ def main() -> None:
         # Update patient memory
         if patient_name != "anonymous" and (summary_data or diagnosis_data):
             print("  Updating patient profile...")
-            llm_for_memory = _make_llm(args.model)
+            llm_for_memory = _make_llm(args.model, provider=args.provider, ollama_url=args.ollama_url)
             memory.update_from_session(patient_name, summary_data, diagnosis_data, llm_for_memory)
             print(f"  Patient profile for '{patient_name}' updated.\n")
 
