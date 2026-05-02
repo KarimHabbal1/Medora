@@ -74,8 +74,29 @@ OLLAMA_MODELS = [
         "name": "medllama2-7b",
         "provider": "ollama",
         "model_id": "medllama2:7b",
-        "description": "Medical-specific — does domain training help?",
+        "description": "Medical-specific (Llama 2 based) — obsolete, fails structured output",
         "timeout_seconds": 180,
+    },
+    {
+        "name": "deepseek-r1-14b",
+        "provider": "ollama",
+        "model_id": "deepseek-r1:14b",
+        "description": "Reasoning model distilled from 93% USMLE parent — chain-of-thought",
+        "timeout_seconds": 600,
+    },
+    {
+        "name": "qwen2.5-32b",
+        "provider": "ollama",
+        "model_id": "qwen2.5:32b",
+        "description": "Largest model fitting A10G — excellent structured output",
+        "timeout_seconds": 600,
+    },
+    {
+        "name": "aloe-8b",
+        "provider": "ollama",
+        "model_id": "aloe-8b",
+        "description": "Medical fine-tune of Llama 3.1 8B — best 8B medical model",
+        "timeout_seconds": 300,
     },
 ]
 
