@@ -454,12 +454,16 @@ def generate_textbook_cases(
 # ─────────────────────────────────────────────────────────────────────────────
 
 _MEDQA_FILTER_SYSTEM = """\
-You are a medical curriculum expert. Decide whether a diagnosis is explicitly
-covered in the given list of medical textbook chapter topics.
+You are a medical curriculum expert. Decide whether a diagnosis would reasonably
+be discussed in any of the given medical textbook chapters.
 
 A condition is "covered" if:
-  - It is the primary subject of one of the listed chapters, OR
-  - It is a major subsection condition in internal medicine / general medicine
+  - It falls within the scope of ANY listed chapter (e.g., "Pneumonia" is covered by "Pulmonary Disorders")
+  - It is a common internal medicine condition that would appear in a general medical reference
+  - The chapter name broadly covers the organ system or disease category
+
+Be INCLUSIVE — most common medical conditions are covered by at least one chapter.
+Only say "no" for highly specialized conditions outside internal medicine (e.g., ophthalmologic surgery, pediatric-only conditions).
 
 Respond with ONLY one word: yes  or  no"""
 
