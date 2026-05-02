@@ -50,3 +50,4 @@ data/feedback/
 
 # Evaluation data (generated — large files, not committed)
 data/evaluation/*.json
+data/results/
