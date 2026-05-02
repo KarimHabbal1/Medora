@@ -1,12 +1,12 @@
 """
-Phase 6 — Web Search Agent (Simple)
-Searches the web for medical evidence using SearXNG and extracts
-relevant clinical information using an LLM.
+Phase 6 — Web Search Agent
+Searches credible medical sources via SearXNG for symptoms and produces
+a diagnosis with evidence from trusted sources only.
 
 Usage:
-    python agents/web_search.py --question "What causes erythema nodosum"
-    python agents/web_search.py --question "treatment for pertussis" --model llama3.1:8b
-    python agents/web_search.py --question "DKA management" --max-sources 3
+    python agents/web_search.py --symptoms "painful rash on legs, fever, joint pain"
+    python agents/web_search.py --symptoms "chest pain, shortness of breath, arm radiation" --model llama3.1:8b
+    python agents/web_search.py --symptoms "persistent cough, weight loss, night sweats" --max-sources 3
 """
 
 from __future__ import annotations
@@ -31,40 +31,38 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 # Domain lists
 # ---------------------------------------------------------------------------
-TRUSTED_DOMAINS = {
+# Only these sources are used — everything else is dropped
+WHITELISTED_DOMAINS = {
     "pubmed.ncbi.nlm.nih.gov", "pmc.ncbi.nlm.nih.gov", "ncbi.nlm.nih.gov",
     "mayoclinic.org", "clevelandclinic.org", "uptodate.com",
     "medlineplus.gov", "who.int", "cdc.gov", "nice.org.uk",
     "bmj.com", "nejm.org", "thelancet.com", "nih.gov",
-    "hopkinsmedicine.org", "merckmanuals.com", "webmd.com",
-    "healthline.com", "medscape.com",
-}
-
-BLOCKED_DOMAINS = {
-    "reddit.com", "quora.com", "twitter.com", "facebook.com",
-    "tiktok.com", "instagram.com", "pinterest.com",
+    "hopkinsmedicine.org", "merckmanuals.com", "medscape.com",
 }
 
 EXTRACTION_SYSTEM_PROMPT = """\
-You are a medical evidence extractor. Given a clinical question and content
-from multiple medical web sources, extract the key clinical findings relevant
-to the question.
+You are a clinical diagnostic assistant. Given a patient's symptoms and content
+from credible medical sources, determine the most likely diagnosis and supporting
+evidence.
 
 Rules:
-- Extract only factual medical claims supported by the source text
-- For each finding, note which source it came from
-- Focus on: causes, diagnosis criteria, treatment approaches, risk factors,
-  prognosis — whatever is relevant to the question
+- Analyze the symptoms against the medical source content
+- Identify the most likely diagnosis based on the evidence
+- List supporting findings from each source
+- Note any differential diagnoses mentioned
+- For each finding, cite the source it came from
+- If sources suggest different diagnoses, note the conflict
 - Be concise — one sentence per finding
-- If sources conflict, note the conflict
 
 Return a JSON object:
 {
-    "evidence_summary": "2-3 sentence summary of the key evidence found",
+    "primary_diagnosis": "most likely condition based on the evidence",
+    "confidence": "high/moderate/low",
+    "evidence_summary": "2-3 sentence summary connecting symptoms to diagnosis",
     "key_findings": [
-        {"claim": "specific finding", "source": "source name", "url": "source url"},
-        ...
-    ]
+        {"claim": "specific finding supporting the diagnosis", "source": "source name", "url": "source url"}
+    ],
+    "differential_diagnoses": ["other possible conditions mentioned in sources"]
 }
 Return ONLY valid JSON."""
 
@@ -111,13 +109,12 @@ def _domain(url: str) -> str:
     return urlparse(url).netloc.lower().removeprefix("www.")
 
 
-def _domain_score(domain: str) -> int:
-    """Higher score = ranked first."""
-    if domain in BLOCKED_DOMAINS:
-        return -1
-    if domain in TRUSTED_DOMAINS:
-        return 2
-    return 1
+def _is_whitelisted(domain: str) -> bool:
+    """Check if domain is in our whitelist (also matches subdomains)."""
+    for wd in WHITELISTED_DOMAINS:
+        if domain == wd or domain.endswith("." + wd):
+            return True
+    return False
 
 
 def _search_searxng(query: str, searxng_url: str, max_results: int) -> list[dict]:
@@ -139,18 +136,15 @@ def _search_searxng(query: str, searxng_url: str, max_results: int) -> list[dict
         if not url:
             continue
         domain = _domain(url)
-        score = _domain_score(domain)
-        if score < 0:
-            continue  # blocked
+        if not _is_whitelisted(domain):
+            continue  # only whitelisted sources
         results.append({
             "title": str(item.get("title", "")),
             "url": url,
             "domain": domain,
             "snippet": str(item.get("content", "") or item.get("snippet", "")),
-            "_score": score,
         })
 
-    results.sort(key=lambda r: r["_score"], reverse=True)
     return results[:max_results]
 
 
@@ -193,7 +187,7 @@ def _parse_llm_json(raw) -> dict:
 # Main public function
 # ---------------------------------------------------------------------------
 def search_medical_evidence(
-    question: str,
+    symptoms: str,
     llm=None,
     model: str = "llama3.1:8b",
     searxng_url: str = None,
@@ -202,23 +196,25 @@ def search_medical_evidence(
     ollama_url: str = None,
 ) -> dict:
     """
-    Search the web for medical evidence and extract relevant findings.
+    Search credible medical sources for a diagnosis based on symptoms.
+
+    Args:
+        symptoms: patient symptoms description (e.g., "painful rash on legs, fever, joint pain")
 
     Returns:
         {
-            "question": str,
+            "symptoms": str,
+            "primary_diagnosis": str,
+            "confidence": str,
             "sources": [{"title", "url", "domain", "snippet", "content"}],
             "evidence_summary": str,
             "key_findings": [{"claim": str, "source": str, "url": str}],
+            "differential_diagnoses": [str],
             "search_query": str,
         }
     """
-    # 1. Build search query
-    q_lower = question.lower()
-    if not any(kw in q_lower for kw in ("medical", "clinical", "treatment", "diagnosis")):
-        search_query = f"medical {question}"
-    else:
-        search_query = question
+    # 1. Build search query — frame symptoms as a diagnostic search
+    search_query = f"diagnosis symptoms {symptoms}"
 
     # 2. Resolve SearXNG URL
     base_url = (searxng_url or os.getenv("SEARXNG_BASE_URL") or "").rstrip("/")
@@ -253,7 +249,7 @@ def search_medical_evidence(
         )
 
     user_prompt = (
-        f"Clinical question: {question}\n\n"
+        f"Patient symptoms: {symptoms}\n\n"
         + "\n\n---\n\n".join(source_blocks)
     )
 
@@ -268,11 +264,14 @@ def search_medical_evidence(
         }
 
     return {
-        "question": question,
+        "symptoms": symptoms,
         "search_query": search_query,
+        "primary_diagnosis": extraction.get("primary_diagnosis", ""),
+        "confidence": extraction.get("confidence", ""),
         "sources": sources,
         "evidence_summary": extraction.get("evidence_summary", ""),
         "key_findings": extraction.get("key_findings", []),
+        "differential_diagnoses": extraction.get("differential_diagnoses", []),
     }
 
 
@@ -281,7 +280,7 @@ def search_medical_evidence(
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Medora web evidence search agent")
-    parser.add_argument("--question", required=True, help="Clinical question to research")
+    parser.add_argument("--symptoms", required=True, help="Patient symptoms to diagnose")
     parser.add_argument("--model", default="llama3.1:8b", help="LLM model name")
     parser.add_argument("--provider", default=None, help="LLM provider: ollama | openai")
     parser.add_argument("--ollama-url", default=None, help="Ollama base URL")
@@ -290,7 +289,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     result = search_medical_evidence(
-        question=args.question,
+        symptoms=args.symptoms,
         model=args.model,
         provider=args.provider,
         ollama_url=args.ollama_url,
@@ -298,14 +297,19 @@ if __name__ == "__main__":
         max_sources=args.max_sources,
     )
 
-    print(f"\nQuestion: {result['question']}")
+    print(f"\nSymptoms: {result['symptoms']}")
     print(f"Search query: {result['search_query']}")
-    print(f"\nSources fetched: {len(result['sources'])}")
+    print(f"\nPrimary Diagnosis: {result['primary_diagnosis']}")
+    print(f"Confidence: {result['confidence']}")
+    print(f"\nSources ({len(result['sources'])}):")
     for i, src in enumerate(result["sources"], 1):
         content_len = len(src.get("content") or "")
         print(f"  {i}. [{src['domain']}] {src['title']} ({content_len} chars)")
 
     print(f"\nEvidence Summary:\n{result['evidence_summary']}")
+
+    if result.get("differential_diagnoses"):
+        print(f"\nDifferential Diagnoses: {', '.join(result['differential_diagnoses'])}")
 
     print(f"\nKey Findings ({len(result['key_findings'])}):")
     for finding in result["key_findings"]:
