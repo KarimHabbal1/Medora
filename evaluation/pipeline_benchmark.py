@@ -559,24 +559,13 @@ def filter_medqa_to_textbook(
 
         checked += 1
 
-        # Parse MedQA fields — dataset uses different key names
-        question_text: str = raw.get("question") or raw.get("sent1") or ""
+        # Parse MedQA fields
+        question_text: str = raw.get("question", "")
+        correct_answer: str = raw.get("answer", "")
         options_raw = raw.get("options") or {}
-        ending_key = raw.get("answer_key") or raw.get("answerKey") or ""
+        options_list = [f"{k}: {v}" for k, v in sorted(options_raw.items())] if isinstance(options_raw, dict) else []
 
-        # Resolve correct answer text
-        if isinstance(options_raw, dict):
-            correct_answer = options_raw.get(ending_key, "")
-            options_list = [f"{k}: {v}" for k, v in sorted(options_raw.items())]
-        elif isinstance(options_raw, list):
-            # Some versions encode as a list of strings
-            correct_answer = options_raw[ord(ending_key) - ord("A")] if ending_key else ""
-            options_list = [f"{chr(65+i)}: {o}" for i, o in enumerate(options_raw)]
-        else:
-            correct_answer = ""
-            options_list = []
-
-        if not correct_answer.strip():
+        if not correct_answer.strip() or not question_text.strip():
             continue
 
         # Ask GPT-4o-mini whether this condition is in our textbook
