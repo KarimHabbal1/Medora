@@ -47,3 +47,6 @@ data/patient_profiles/
 # Doctor feedback / training data (PHI — never commit)
 data/feedback/
 .claude/
+
+# Evaluation data (generated — large files, not committed)
+data/evaluation/*.json
