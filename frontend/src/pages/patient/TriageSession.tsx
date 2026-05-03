@@ -53,7 +53,10 @@ const TriageSessionPage: React.FC = () => {
   const [error, setError] = useState('');
   const [ended, setEnded] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
+  const [streamingId, setStreamingId] = useState<string | null>(null);
+  const [streamedText, setStreamedText] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Load session data
   useEffect(() => {
@@ -119,16 +122,33 @@ const TriageSessionPage: React.FC = () => {
 
     try {
       const agentReply = await triageApi.sendMessage(sessionId, { content: text });
+      const replyId = agentReply.id;
+      // Add reply with empty content — we'll stream it in
       setMessages((prev) => {
         const withoutTemp = prev.filter((m) => m.id !== tempMsg.id);
-        return [...withoutTemp, { ...tempMsg, id: `patient-${Date.now()}` }, agentReply];
+        return [...withoutTemp, { ...tempMsg, id: `patient-${Date.now()}` }, { ...agentReply, content: '' }];
       });
-      // Refresh the phase after getting a response
+      setSending(false);
+
+      // Stream words in
+      const words = agentReply.content.split(' ');
+      setStreamingId(replyId);
+      setStreamedText('');
+      for (let i = 0; i < words.length; i++) {
+        const partial = words.slice(0, i + 1).join(' ');
+        setStreamedText(partial);
+        setMessages((prev) => prev.map((m) => m.id === replyId ? { ...m, content: partial } : m));
+        await new Promise((r) => setTimeout(r, 30));
+      }
+      setStreamingId(null);
+      setStreamedText('');
+
       await refreshPhase();
     } catch {
       setError('Failed to send message. Please try again.');
-    } finally {
       setSending(false);
+    } finally {
+      inputRef.current?.focus();
     }
   };
 
@@ -174,7 +194,7 @@ const TriageSessionPage: React.FC = () => {
       <div className="flex items-center justify-between mb-4 flex-shrink-0">
         <div>
           <h1 className="text-lg font-semibold text-text-primary">
-            {session?.chief_complaint || 'Triage Session'}
+            Triage Session
           </h1>
           <div className="flex items-center gap-2 mt-1">
             <Badge variant={ended ? 'success' : 'primary'}>
@@ -296,6 +316,8 @@ const TriageSessionPage: React.FC = () => {
       {!ended && (
         <div className="flex gap-2 mt-3 flex-shrink-0">
           <input
+            ref={inputRef}
+            autoFocus
             className="flex-1 rounded-xl border border-border bg-white px-4 py-2.5 text-sm text-text-primary placeholder-text-tertiary focus:outline-none focus:ring-2 focus:ring-medora-500 focus:border-medora-500 hover:border-medora-300 transition-colors"
             placeholder="Describe your symptoms..."
             value={input}

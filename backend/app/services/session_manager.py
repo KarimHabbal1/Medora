@@ -33,20 +33,23 @@ _IntakeSession = None
 _AgentTriageSession = None
 _PatientMemory = None
 _FeedbackStore = None
+_make_llm = None
 
 
 def _lazy_import_agents():
     """Import agent classes on first use."""
-    global _IntakeSession, _AgentTriageSession, _PatientMemory, _FeedbackStore
+    global _IntakeSession, _AgentTriageSession, _PatientMemory, _FeedbackStore, _make_llm
     if _IntakeSession is None:
         from agents.intake_agent import IntakeSession
         from agents.triage_agent import TriageSession as AgentTriageSession
         from agents.patient_memory import PatientMemory
         from agents.feedback_store import FeedbackStore
+        from config import make_llm
         _IntakeSession = IntakeSession
         _AgentTriageSession = AgentTriageSession
         _PatientMemory = PatientMemory
         _FeedbackStore = FeedbackStore
+        _make_llm = make_llm
 
 
 @dataclass
@@ -371,10 +374,13 @@ class AgentSessionManager:
     ) -> None:
         """Update PatientMemory after session completion."""
         try:
+            _lazy_import_agents()
+            llm = _make_llm()
             self.patient_memory.update_from_session(
                 patient_name=patient_name,
                 intake_summary=intake_summary,
                 diagnosis=diagnosis,
+                llm=llm,
             )
             logger.info("Updated PatientMemory for %s", patient_name)
         except Exception:
@@ -394,15 +400,14 @@ class AgentSessionManager:
         try:
             symptoms = intake_summary.get("symptoms", [])
             urgency = intake_summary.get("urgency", "unknown")
-            clinical_picture = intake_summary.get("clinical_picture", {})
             case_id = self.feedback_store.save_case(
                 patient_name=patient_name,
                 symptoms=symptoms,
                 urgency=urgency,
                 intake_summary=intake_summary,
-                clinical_picture=clinical_picture,
+                clinical_picture={},
                 diagnosis_report=diagnosis,
-                retrieved_chunks=diagnosis.get("chunks", []),
+                retrieved_chunks=[],
             )
             logger.info("Saved feedback case %s for %s", case_id, patient_name)
             return case_id

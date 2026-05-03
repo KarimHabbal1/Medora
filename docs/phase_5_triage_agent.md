@@ -310,7 +310,7 @@ The questions are grounded in the retrieved evidence, not generated from general
 
 **Output:** `generated_questions` — a list of 4–6 question strings. The first question is emitted and the graph pauses at END.
 
-### Pass 2: Targeted Retrieval and Preliminary Diagnosis
+### Pass 2: Targeted Retrieval, Preliminary Diagnosis, and Differentiating Questions
 
 **Input:** Original complaint + all patient answers from Pass 1 questioning.
 
@@ -320,7 +320,11 @@ The questions are grounded in the retrieved evidence, not generated from general
 
 **Preliminary diagnosis:** All accumulated chunks (Pass 1 + Pass 2) and all clinical context are passed to the diagnosis LLM. A full seven-section diagnosis report is generated.
 
-**Refinement evaluation:** After the preliminary diagnosis, `evaluate_refinement` sends the complaint, all patient answers, and the preliminary diagnosis to the LLM with `_REFINEMENT_EVALUATION_SYSTEM`. The LLM must return:
+**Differentiating questions (conditional):** After the preliminary diagnosis, the system evaluates whether there is diagnostic uncertainty — multiple plausible competing diagnoses where the primary does not have high confidence. If uncertain, the LLM generates 2–4 targeted differentiating questions designed to distinguish between the top competing diagnoses. These questions are asked to the patient one by one. Once answered, the system re-retrieves with the enriched context and regenerates the diagnosis. This mirrors the Mode A sufficiency check pattern: gather more patient information to resolve diagnostic ambiguity rather than relying solely on additional textbook searches.
+
+If the primary diagnosis has high confidence with no meaningful competing differentials, no differentiating questions are asked and the diagnosis proceeds directly to refinement evaluation.
+
+**Refinement evaluation:** After the Pass 2 diagnosis (with or without differentiating questions), `evaluate_refinement` sends the complaint, all patient answers, and the diagnosis to the LLM. The LLM must return:
 
 ```json
 {
@@ -330,19 +334,23 @@ The questions are grounded in the retrieved evidence, not generated from general
 }
 ```
 
-If `needs_refinement=false`, the preliminary diagnosis is final. If `needs_refinement=true`, Pass 3 fires.
+If `needs_refinement=false`, the diagnosis is final. If `needs_refinement=true`, Pass 3 fires.
 
 A critical finding is defined as one that: introduces a new specific diagnosis not previously considered; strongly rules in or rules out a major condition; or reveals an important historical fact that redirects the clinical picture. The bar is intentionally high — routine confirmatory details should not trigger Pass 3.
 
-### Pass 3: Critical Finding Refinement (Conditional)
+### Pass 3: Critical Finding Refinement with Differentiating Questions (Conditional)
 
 **Input:** The targeted `refinement_search_query` constructed by the LLM — specific to the critical finding.
 
 **Retrieval:** `retrieve_and_rerank()` is called with the targeted query. For the leg rash case: `"erythema nodosum associated conditions and causes"` — retrieves content about systemic associations (sarcoidosis, tuberculosis, streptococcal infection, IBD) that the first two passes may not have surfaced.
 
-**Final diagnosis:** All accumulated chunks (Passes 1 + 2 + 3) are passed to the diagnosis LLM. This final diagnosis has access to the broadest possible evidence base: initial broad context, targeted differential context, and specific associated-condition context.
+**Preliminary diagnosis:** All accumulated chunks (Passes 1 + 2 + 3) are passed to the diagnosis LLM.
 
-**HARD STOP:** Pass 3 never triggers Pass 4. `generate_diagnosis_pass3` sets `needs_refinement=False` before calling the shared diagnosis function, and explicitly returns `diagnosis_complete=True`. The routing function `route_after_diagnosis` routes `current_pass >= 3` directly to END without visiting `evaluate_refinement`. The cap is enforced at multiple levels (see Infinite Loop section).
+**Differentiating questions (conditional):** Same as Pass 2 — if the Pass 3 diagnosis is uncertain between competing conditions, 2–4 targeted differentiating questions are asked. Patient answers are used to re-retrieve and regenerate the final diagnosis. If the diagnosis is confident, no questions are asked.
+
+**Final diagnosis:** The final diagnosis has access to the broadest possible evidence base: initial broad context, targeted differential context, specific associated-condition context, and all patient answers including differentiating responses.
+
+**HARD STOP:** Pass 3 never triggers Pass 4. The cap is enforced at multiple levels (see Infinite Loop section).
 
 ### The Infinite Loop Problem and How It Is Solved
 

@@ -8,10 +8,14 @@ Key safety guarantees:
   - SessionMessages with message_type='diagnosis' are excluded from patient message lists
 """
 
+import asyncio
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 from ..database import get_db
 from ..auth.dependencies import get_current_patient_user
 from ..models import User, PatientProfile, DoctorProfile, TriageSession, SessionMessage, ClinicalReport
@@ -20,6 +24,7 @@ from ..schemas.triage import (
     TriageSessionCreate, PatientTriageSessionResponse,
     MessageCreate, MessageResponse, SessionPhaseResponse,
 )
+from ..config import settings
 from ..services.session_manager import AgentSessionManager
 from ..services.intake_agent_service import get_process_result
 from ..services.report_service import generate_clinical_report
@@ -73,6 +78,8 @@ def create_session(
     manager.create_session(
         session_id=str(session.id),
         patient_context=patient_context,
+        provider=settings.llm_provider,
+        ollama_url=settings.ollama_url,
     )
 
     return session
@@ -293,20 +300,31 @@ def end_session(session_id: str, current_user: User = Depends(get_current_patien
     )
     db.add(db_report)
 
-    # Update PatientMemory and FeedbackStore
-    if intake_summary:
-        manager.update_patient_memory(
-            current_user.full_name, intake_summary, diagnosis
-        )
-        if diagnosis:
-            manager.save_feedback_case(
-                current_user.full_name, intake_summary, diagnosis
-            )
-
     # Clean up the in-memory session
     manager.remove_session(str(session.id))
 
     db.commit()
+
+    # Run memory/feedback updates in background — don't block the response
+    if intake_summary:
+        patient_name = current_user.full_name
+
+        async def _background_updates():
+            try:
+                await asyncio.to_thread(
+                    manager.update_patient_memory, patient_name, intake_summary, diagnosis
+                )
+            except Exception:
+                logger.exception("Background: failed to update PatientMemory for %s", patient_name)
+            try:
+                if diagnosis:
+                    await asyncio.to_thread(
+                        manager.save_feedback_case, patient_name, intake_summary, diagnosis
+                    )
+            except Exception:
+                logger.exception("Background: failed to save feedback case for %s", patient_name)
+
+        asyncio.create_task(_background_updates())
 
     return {"message": "Session ended", "report_id": str(db_report.id)}
 
@@ -370,15 +388,26 @@ def _finalize_session(
     )
     db.add(db_report)
 
-    # Update PatientMemory + FeedbackStore
     manager = _get_manager()
-    if intake_summary:
-        manager.update_patient_memory(
-            current_user.full_name, intake_summary, diagnosis
-        )
-        if diagnosis:
-            manager.save_feedback_case(
-                current_user.full_name, intake_summary, diagnosis
-            )
-
     manager.remove_session(str(session.id))
+
+    # Run memory/feedback updates in background — don't block the response
+    if intake_summary:
+        patient_name = current_user.full_name
+
+        async def _background_updates():
+            try:
+                await asyncio.to_thread(
+                    manager.update_patient_memory, patient_name, intake_summary, diagnosis
+                )
+            except Exception:
+                logger.exception("Background: failed to update PatientMemory for %s", patient_name)
+            try:
+                if diagnosis:
+                    await asyncio.to_thread(
+                        manager.save_feedback_case, patient_name, intake_summary, diagnosis
+                    )
+            except Exception:
+                logger.exception("Background: failed to save feedback case for %s", patient_name)
+
+        asyncio.create_task(_background_updates())

@@ -66,7 +66,7 @@ def make_llm(model: str = None, provider: str = None, ollama_url: str = None, te
 
     if provider == "openai":
         from langchain_openai import ChatOpenAI
-        return ChatOpenAI(model=model, temperature=temperature)
+        return ChatOpenAI(model=model, temperature=temperature, request_timeout=120)
     elif provider == "ollama":
         try:
             from langchain_community.chat_models import ChatOllama

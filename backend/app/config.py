@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
+    llm_provider: str = "openai"
+    llm_model: str = "gpt-4o-mini"
+    ollama_url: str = "http://localhost:11434"
 
     class Config:
         # Look for .env in both the CWD and backend/ subdirectory

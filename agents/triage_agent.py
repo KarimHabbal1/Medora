@@ -90,6 +90,11 @@ class TriageState(TypedDict):
     refinement_reason: str          # why Pass 3 was triggered
     refinement_search_query: str    # targeted query for Pass 3
 
+    # Pass 2/3 differentiating questions (Mode B)
+    diff_questions: list[str]       # differentiating questions for current pass
+    diff_answers: dict              # diff question → answer
+    diff_question_idx: int          # index into diff_questions
+
     # Mode A follow-up tracking (when intake answers are insufficient)
     info_sufficient: bool           # True if intake answers are enough for diagnosis
     followup_questions: list[str]   # additional questions for Mode A
@@ -178,6 +183,31 @@ Respond with ONLY a valid JSON object:
 }
 
 No explanation, no markdown.\
+"""
+
+_DIFFERENTIATING_QUESTIONS_SYSTEM = """\
+You are a clinical diagnostician. You have generated a preliminary diagnosis but there
+is uncertainty — multiple conditions in the differential are plausible.
+
+Based on the preliminary diagnosis report and the patient's history so far, generate
+2-4 targeted questions that would help DIFFERENTIATE between the top competing diagnoses.
+
+Rules:
+- Each question should distinguish between specific competing conditions
+- Use patient-friendly language
+- Only ask things the patient can answer (no lab results, imaging, physical exam findings)
+- Focus on features that would rule in one diagnosis and rule out another
+
+Return a JSON object:
+{
+  "uncertain": true or false,
+  "questions": ["question 1", "question 2", ...]
+}
+
+Set "uncertain" to false if the primary diagnosis has HIGH confidence and no meaningful
+competing differentials. In that case, return an empty questions list.
+
+Return ONLY valid JSON. No explanation, no markdown.\
 """
 
 
@@ -1177,6 +1207,29 @@ def _build_graph(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Shared model cache — loaded once, reused across all TriageSession instances
+# ─────────────────────────────────────────────────────────────────────────────
+
+_model_cache = {
+    "device": None,
+    "collection": None,
+    "bi_encoder": None,
+    "reranker": None,
+    "reranker_device": None,
+}
+
+
+def _get_shared_models():
+    """Load heavy models once and cache them at module level."""
+    if _model_cache["collection"] is None:
+        _model_cache["device"] = detect_device()
+        _model_cache["collection"] = open_collection(CHROMA_DIR)
+        _model_cache["bi_encoder"] = load_bi_encoder(EMBEDDING_MODEL, _model_cache["device"])
+        _model_cache["reranker"], _model_cache["reranker_device"] = load_cross_encoder(RERANKER_MODEL)
+    return _model_cache
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # TriageSession — manages a single triage conversation
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1207,12 +1260,13 @@ class TriageSession:
         provider: str = None,
         ollama_url: str = None,
     ):
-        print("\nInitialising Triage Agent models...")
+        models = _get_shared_models()
         self._llm = make_llm(model=llm_model, provider=provider, ollama_url=ollama_url)
-        self._device = detect_device()
-        self._collection = open_collection(CHROMA_DIR)
-        self._bi_encoder = load_bi_encoder(EMBEDDING_MODEL, self._device)
-        self._reranker, self._reranker_device = load_cross_encoder(RERANKER_MODEL)
+        self._device = models["device"]
+        self._collection = models["collection"]
+        self._bi_encoder = models["bi_encoder"]
+        self._reranker = models["reranker"]
+        self._reranker_device = models["reranker_device"]
         self._retrieve_k = retrieve_k
         self._return_k = return_k
 
@@ -1227,12 +1281,6 @@ class TriageSession:
 
         self._state: TriageState = self._empty_state()
         self._phase: str = "idle"  # "idle" | "questioning" | "done"
-
-        print(
-            f"Triage Agent ready  "
-            f"(bi-encoder on {self._device}, "
-            f"reranker on {self._reranker_device})\n"
-        )
 
     def _empty_state(self) -> TriageState:
         return {
@@ -1254,6 +1302,9 @@ class TriageSession:
             "followup_answers": {},
             "followup_question_idx": 0,
             "followup_phase": False,
+            "diff_questions": [],
+            "diff_answers": {},
+            "diff_question_idx": 0,
             "diagnosis": {},
             "diagnosis_complete": False,
         }
@@ -1372,6 +1423,38 @@ class TriageSession:
 
         return self._last_ai_text()
 
+    def _generate_diff_questions(self) -> list[str]:
+        """Ask the LLM if the preliminary diagnosis is uncertain and needs differentiating questions."""
+        diagnosis = self._state.get("diagnosis", {})
+        report = diagnosis.get("report", "")
+        raw_complaint = self._state.get("raw_complaint", "")
+        patient_answers = self._state.get("patient_answers", {})
+        diff_answers = self._state.get("diff_answers", {})
+
+        all_answers = {**patient_answers, **diff_answers}
+        qa_block = "\n".join(f"  - {q}: {a}" for q, a in all_answers.items())
+
+        response = self._llm.invoke([
+            SystemMessage(content=_DIFFERENTIATING_QUESTIONS_SYSTEM),
+            HumanMessage(content=(
+                f"Patient complaint: {raw_complaint}\n\n"
+                f"Patient answers so far:\n{qa_block}\n\n"
+                f"Preliminary diagnosis report:\n{report}"
+            )),
+        ])
+
+        raw = _strip_fence(response.content)
+        try:
+            result = json.loads(raw)
+            if not result.get("uncertain", False):
+                return []
+            questions = result.get("questions", [])
+            if isinstance(questions, list) and all(isinstance(q, str) for q in questions):
+                return questions[:4]
+        except (json.JSONDecodeError, KeyError):
+            pass
+        return []
+
     def respond(self, patient_answer: str) -> str:
         """
         Mode B: process a patient's answer.
@@ -1382,7 +1465,33 @@ class TriageSession:
 
         self._state["messages"].append(HumanMessage(content=patient_answer))
 
-        # Process the answer and decide next step
+        # If we're in pass 2/3 differentiating questions phase, collect the answer
+        if self._phase in ("pass2_questions", "pass3_questions"):
+            diff_questions = self._state.get("diff_questions", [])
+            diff_idx = self._state.get("diff_question_idx", 0)
+
+            if diff_idx < len(diff_questions):
+                current_q = diff_questions[diff_idx]
+                diff_answers = dict(self._state.get("diff_answers", {}))
+                diff_answers[current_q] = patient_answer
+                self._state["diff_answers"] = diff_answers
+                next_idx = diff_idx + 1
+                self._state["diff_question_idx"] = next_idx
+                print(f"[Triage] Recorded differentiating answer {diff_idx + 1}/{len(diff_questions)}.", flush=True)
+
+                if next_idx < len(diff_questions):
+                    next_q = diff_questions[next_idx]
+                    print(f"\n[Triage] Differentiating question {next_idx + 1}/{len(diff_questions)}: {next_q}", flush=True)
+                    self._state["messages"].append(AIMessage(content=next_q))
+                    return next_q
+
+            # All diff questions answered — generate final diagnosis for this pass
+            if self._phase == "pass2_questions":
+                return self._finalize_pass2()
+            else:
+                return self._finalize_pass3()
+
+        # Process Pass 1 answer
         process_answer_fn = _build_process_answer_node()
         updates = process_answer_fn(self._state)
         self._state.update(updates)
@@ -1391,62 +1500,145 @@ class TriageSession:
         idx = self._state.get("current_question_idx", 0)
 
         if idx < len(questions):
-            # More questions remain — ask the next one
             ask_fn = _build_ask_question_node()
             ask_updates = ask_fn(self._state)
             self._state.update(ask_updates)
             return self._last_ai_text()
 
-        # All questions answered — run the remainder of the graph
-        # (retrieve_evidence_pass2 → generate_diagnosis_pass2 → evaluate_refinement
-        #  → optionally retrieve_evidence_pass3 → generate_diagnosis_pass3)
-        print("[Triage] All questions answered. Running Pass 2 retrieval and diagnosis...")
+        # All Pass 1 questions answered — run Pass 2
+        print("[Triage] All questions answered. Running Pass 2...", flush=True)
+        return self._run_pass2()
 
-        # We reinvoke the graph from a clean-slate style, but we need to resume
-        # from the retrieve_evidence_pass2 node. LangGraph doesn't support
-        # mid-graph resume without checkpointing, so we drive the steps manually.
+    def _run_pass2(self) -> str:
+        """Run Pass 2: retrieval + preliminary diagnosis + check if differentiating questions needed."""
+        retrieve_fn = _build_retrieve_evidence_node(
+            self._collection, self._bi_encoder, self._reranker,
+            self._retrieve_k, self._return_k,
+        )
+
+        print("[Triage] Pass 2: retrieving evidence...", flush=True)
+        self._state["current_pass"] = 2
+        retrieve_updates = retrieve_fn(self._state)
+        self._state.update(retrieve_updates)
+        print("[Triage] Pass 2: retrieval done. Generating preliminary diagnosis...", flush=True)
+
+        diagnosis_fn = _build_generate_diagnosis_node(self._llm)
+        diag_updates = diagnosis_fn(self._state)
+        self._state.update(diag_updates)
+        print("[Triage] Pass 2: preliminary diagnosis generated.", flush=True)
+
+        # Check if we need differentiating questions
+        diff_questions = self._generate_diff_questions()
+        if diff_questions:
+            print(f"[Triage] Pass 2: {len(diff_questions)} differentiating questions needed.", flush=True)
+            self._state["diff_questions"] = diff_questions
+            self._state["diff_answers"] = {}
+            self._state["diff_question_idx"] = 0
+            self._phase = "pass2_questions"
+
+            first_q = diff_questions[0]
+            print(f"\n[Triage] Differentiating question 1/{len(diff_questions)}: {first_q}", flush=True)
+            self._state["messages"].append(AIMessage(content=first_q))
+            return first_q
+        else:
+            print("[Triage] Pass 2: diagnosis is confident. No differentiating questions needed.", flush=True)
+            return self._finalize_pass2()
+
+    def _finalize_pass2(self) -> str:
+        """After Pass 2 questions (if any), regenerate diagnosis with new info and evaluate refinement."""
+        diff_answers = self._state.get("diff_answers", {})
+        if diff_answers:
+            # Merge diff answers into patient_answers for context
+            all_answers = dict(self._state.get("patient_answers", {}))
+            all_answers.update(diff_answers)
+            self._state["patient_answers"] = all_answers
+
+            # Re-retrieve with enriched context and regenerate diagnosis
+            print("[Triage] Pass 2: re-generating diagnosis with differentiating answers...", flush=True)
+            retrieve_fn = _build_retrieve_evidence_node(
+                self._collection, self._bi_encoder, self._reranker,
+                self._retrieve_k, self._return_k,
+            )
+            retrieve_updates = retrieve_fn(self._state)
+            self._state.update(retrieve_updates)
+
+            diagnosis_fn = _build_generate_diagnosis_node(self._llm)
+            diag_updates = diagnosis_fn(self._state)
+            self._state.update(diag_updates)
+            print("[Triage] Pass 2: diagnosis regenerated with differentiating answers.", flush=True)
+
+        # Evaluate refinement
+        evaluate_fn = _build_evaluate_refinement_node(self._llm)
+        eval_updates = evaluate_fn(self._state)
+        self._state.update(eval_updates)
+        print(f"[Triage] Refinement needed: {self._state.get('needs_refinement', False)}", flush=True)
+
+        if self._state.get("needs_refinement", False):
+            return self._run_pass3()
+
+        self._phase = "done"
+        print("[Triage] Triage complete.", flush=True)
+        return self._state["diagnosis"]["report"]
+
+    def _run_pass3(self) -> str:
+        """Run Pass 3: targeted retrieval + diagnosis + check if differentiating questions needed."""
+        print("[Triage] Running Pass 3 (targeted refinement)...", flush=True)
+        self._state["current_pass"] = 3
 
         retrieve_fn = _build_retrieve_evidence_node(
             self._collection, self._bi_encoder, self._reranker,
             self._retrieve_k, self._return_k,
         )
-        evaluate_fn = _build_evaluate_refinement_node(self._llm)
-        diagnosis_fn_p2 = _build_generate_diagnosis_node(self._llm)
-        diagnosis_fn_p3 = _build_generate_diagnosis_node(self._llm)
-
-        # Pass 2 retrieval
-        self._state["current_pass"] = 2
         retrieve_updates = retrieve_fn(self._state)
         self._state.update(retrieve_updates)
 
-        # Pass 2 diagnosis
-        diag_updates = diagnosis_fn_p2(self._state)
+        self._state["needs_refinement"] = False
+        diagnosis_fn = _build_generate_diagnosis_node(self._llm)
+        diag_updates = diagnosis_fn(self._state)
         self._state.update(diag_updates)
+        print("[Triage] Pass 3: preliminary diagnosis generated.", flush=True)
 
-        # Hard cap check
-        if self._state.get("current_pass", 2) >= 3:
-            self._state["diagnosis_complete"] = True
-            self._phase = "done"
-            return self._state["diagnosis"]["report"]
+        # Check if we need differentiating questions for Pass 3
+        diff_questions = self._generate_diff_questions()
+        if diff_questions:
+            print(f"[Triage] Pass 3: {len(diff_questions)} differentiating questions needed.", flush=True)
+            self._state["diff_questions"] = diff_questions
+            self._state["diff_answers"] = {}
+            self._state["diff_question_idx"] = 0
+            self._phase = "pass3_questions"
 
-        # Evaluate refinement
-        eval_updates = evaluate_fn(self._state)
-        self._state.update(eval_updates)
+            first_q = diff_questions[0]
+            print(f"\n[Triage] Differentiating question 1/{len(diff_questions)}: {first_q}", flush=True)
+            self._state["messages"].append(AIMessage(content=first_q))
+            return first_q
+        else:
+            print("[Triage] Pass 3: diagnosis is confident.", flush=True)
+            return self._finalize_pass3()
 
-        if self._state.get("needs_refinement", False):
-            print("[Triage] Running Pass 3 (targeted refinement)...")
-            # Pass 3 retrieval
-            self._state["current_pass"] = 3
-            retrieve3_updates = retrieve_fn(self._state)
-            self._state.update(retrieve3_updates)
+    def _finalize_pass3(self) -> str:
+        """After Pass 3 questions (if any), regenerate final diagnosis. HARD STOP."""
+        diff_answers = self._state.get("diff_answers", {})
+        if diff_answers:
+            all_answers = dict(self._state.get("patient_answers", {}))
+            all_answers.update(diff_answers)
+            self._state["patient_answers"] = all_answers
 
-            # Force final on pass 3
-            self._state["needs_refinement"] = False
-            diag3_updates = diagnosis_fn_p3(self._state)
-            self._state.update(diag3_updates)
-            self._state["diagnosis_complete"] = True
+            print("[Triage] Pass 3: re-generating final diagnosis with differentiating answers...", flush=True)
+            retrieve_fn = _build_retrieve_evidence_node(
+                self._collection, self._bi_encoder, self._reranker,
+                self._retrieve_k, self._return_k,
+            )
+            retrieve_updates = retrieve_fn(self._state)
+            self._state.update(retrieve_updates)
 
+            diagnosis_fn = _build_generate_diagnosis_node(self._llm)
+            diag_updates = diagnosis_fn(self._state)
+            self._state.update(diag_updates)
+            print("[Triage] Pass 3: final diagnosis regenerated.", flush=True)
+
+        self._state["diagnosis_complete"] = True
         self._phase = "done"
+        print("[Triage] Pass 3 complete. Triage complete.", flush=True)
         return self._state["diagnosis"]["report"]
 
     def is_complete(self) -> bool:
