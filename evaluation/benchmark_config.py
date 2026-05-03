@@ -92,10 +92,10 @@ OLLAMA_MODELS = [
         "timeout_seconds": 600,
     },
     {
-        "name": "qwen3-32b",
+        "name": "qwen3.5-27b",
         "provider": "ollama",
-        "model_id": "qwen3:32b",
-        "description": "Latest Qwen, strong reasoning, fits in A10G VRAM",
+        "model_id": "qwen3.5:27b",
+        "description": "Newest Qwen (2025), strong reasoning, fits in A10G VRAM",
         "timeout_seconds": 600,
     },
     {
