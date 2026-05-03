@@ -201,6 +201,7 @@ class ClinicalReport(Base):
     diagnosis_mode = Column(String, nullable=True)
     diagnosis_pass_count = Column(Integer, nullable=True)
     chunks_used_count = Column(Integer, nullable=True)
+    web_search_results = Column(JSONB, nullable=True)
     generated_at = Column(TIMESTAMP, server_default=func.now())
 
     # Relationships

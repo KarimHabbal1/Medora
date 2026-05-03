@@ -94,6 +94,7 @@ class ClinicalReportResponse(BaseModel):
     diagnosis_mode: Optional[str]
     diagnosis_pass_count: Optional[int]
     chunks_used_count: Optional[int]
+    web_search_results: Optional[Any]
     generated_at: datetime
 
     class Config:

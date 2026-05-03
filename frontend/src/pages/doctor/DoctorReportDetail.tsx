@@ -58,6 +58,55 @@ const DoctorReportDetail: React.FC = () => {
         <ReportSectionCard title="Referral Criteria" content={report.referral_criteria} />
       </div>
 
+      {/* Web Search Evidence */}
+      {report.web_search_results && (
+        <Card className="border-teal-200 bg-teal-50/50">
+          <h3 className="text-sm font-semibold text-teal-800 mb-3">Web Search Evidence (External Sources)</h3>
+          <div className="space-y-3">
+            <div>
+              <p className="text-xs font-semibold text-text-secondary">Web Diagnosis</p>
+              <p className="text-sm text-text-primary font-medium">
+                {(report.web_search_results as Record<string, unknown>).primary_diagnosis as string || 'N/A'}
+                {(report.web_search_results as Record<string, unknown>).confidence && (
+                  <span className="ml-2 text-xs text-teal-600">({(report.web_search_results as Record<string, unknown>).confidence as string} confidence)</span>
+                )}
+              </p>
+            </div>
+            {(report.web_search_results as Record<string, unknown>).evidence_summary && (
+              <div>
+                <p className="text-xs font-semibold text-text-secondary">Evidence Summary</p>
+                <p className="text-sm text-text-primary">{(report.web_search_results as Record<string, unknown>).evidence_summary as string}</p>
+              </div>
+            )}
+            {Array.isArray((report.web_search_results as Record<string, unknown>).key_findings) && ((report.web_search_results as Record<string, unknown>).key_findings as Array<Record<string, string>>).length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-text-secondary mb-1">Key Findings</p>
+                <ul className="list-disc list-inside space-y-1">
+                  {((report.web_search_results as Record<string, unknown>).key_findings as Array<Record<string, string>>).map((f, i) => (
+                    <li key={i} className="text-sm text-text-primary">
+                      {f.claim}
+                      {f.source && <span className="text-xs text-teal-600 ml-1">— {f.source}</span>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {Array.isArray((report.web_search_results as Record<string, unknown>).sources) && ((report.web_search_results as Record<string, unknown>).sources as Array<Record<string, string>>).length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-text-secondary mb-1">Sources</p>
+                <ul className="space-y-1">
+                  {((report.web_search_results as Record<string, unknown>).sources as Array<Record<string, string>>).map((s, i) => (
+                    <li key={i} className="text-xs text-teal-700">
+                      [{s.domain}] {s.title}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
+
       {/* Escalation */}
       {report.escalation_message && (
         <Card className="border-red-200 bg-red-50/50">

@@ -6,12 +6,21 @@ Replaces the previous mock implementation.
 Agent logic is NOT modified; this module only parses agent output.
 """
 
+import logging
+import os
 import re
+import sys
 from datetime import datetime, timezone
 from uuid import uuid4, UUID
 from typing import Dict, Any, Optional
 from ..schemas.triage import ClinicalReportResponse
 from ..schemas.enums import UrgencyLevel
+
+_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_section(report_text: str, section_name: str) -> Optional[str]:
@@ -33,6 +42,55 @@ def _parse_urgency(urgency_str: str) -> UrgencyLevel:
         "critical": UrgencyLevel.emergency,
     }
     return mapping.get(urgency_str.lower().strip(), UrgencyLevel.unknown)
+
+
+def _run_web_search(intake_summary: Dict[str, Any], diagnosis: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Structure symptoms from triage output and run the web search agent."""
+    try:
+        from agents.web_search import search_medical_evidence, make_llm as ws_make_llm
+
+        searxng_url = os.getenv("SEARXNG_BASE_URL", "").rstrip("/")
+        if not searxng_url:
+            logger.info("Web search skipped — no SEARXNG_BASE_URL configured")
+            return None
+
+        symptoms = intake_summary.get("symptoms", [])
+        if isinstance(symptoms, list):
+            symptom_text = ", ".join(symptoms)
+        else:
+            symptom_text = str(symptoms)
+
+        answers = intake_summary.get("answers", {})
+        if answers:
+            context_parts = [f"{v}" for v in answers.values() if v]
+            symptom_text += ". " + ". ".join(context_parts[:3])
+
+        provider = os.getenv("MEDORA_LLM_PROVIDER", "openai")
+        model = "gpt-4o-mini" if provider == "openai" else "llama3.1:8b"
+        llm = ws_make_llm(model=model, provider=provider)
+
+        logger.info("Running web search for symptoms: %s", symptom_text[:100])
+        result = search_medical_evidence(
+            symptoms=symptom_text,
+            llm=llm,
+            searxng_url=searxng_url,
+            max_sources=5,
+        )
+
+        return {
+            "primary_diagnosis": result.get("primary_diagnosis", ""),
+            "confidence": result.get("confidence", ""),
+            "evidence_summary": result.get("evidence_summary", ""),
+            "key_findings": result.get("key_findings", []),
+            "differential_diagnoses": result.get("differential_diagnoses", []),
+            "sources": [
+                {"title": s.get("title", ""), "url": s.get("url", ""), "domain": s.get("domain", "")}
+                for s in result.get("sources", [])
+            ],
+        }
+    except Exception:
+        logger.exception("Web search failed")
+        return None
 
 
 def generate_clinical_report(
@@ -94,6 +152,9 @@ def _build_from_agent_output(
     escalated = intake_summary.get("escalated", False)
     escalation_msg = intake_summary.get("escalation_message") if escalated else None
 
+    # Run web search for external evidence
+    web_results = _run_web_search(intake_summary, diagnosis)
+
     return ClinicalReportResponse(
         id=uuid4(),
         session_id=UUID(session_id),
@@ -118,6 +179,7 @@ def _build_from_agent_output(
         diagnosis_mode=mode,
         diagnosis_pass_count=pass_count,
         chunks_used_count=num_chunks,
+        web_search_results=web_results,
         generated_at=datetime.now(timezone.utc),
     )
 
@@ -152,5 +214,6 @@ def _build_placeholder(
         diagnosis_mode=None,
         diagnosis_pass_count=None,
         chunks_used_count=None,
+        web_search_results=None,
         generated_at=datetime.now(timezone.utc),
     )

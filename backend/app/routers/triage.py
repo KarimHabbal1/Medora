@@ -296,6 +296,7 @@ def end_session(session_id: str, current_user: User = Depends(get_current_patien
         diagnosis_mode=report.diagnosis_mode,
         diagnosis_pass_count=report.diagnosis_pass_count,
         chunks_used_count=report.chunks_used_count,
+        web_search_results=report.web_search_results,
         generated_at=report.generated_at,
     )
     db.add(db_report)
