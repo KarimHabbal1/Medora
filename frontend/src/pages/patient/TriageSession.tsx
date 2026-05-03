@@ -1,17 +1,51 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { triageApi } from '../../api/triage';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import ErrorAlert from '../../components/ui/ErrorAlert';
-import type { TriageSession, Message } from '../../types/triage';
-import { TriageSessionStatus, MessageSender } from '../../types/enums';
+import type { PatientTriageSession, Message, SessionPhase } from '../../types/triage';
+import { TriageSessionStatus, MessageSender, MessageType, AgentPhase } from '../../types/enums';
+
+/**
+ * Phase indicator labels — maps agent phases to patient-friendly text.
+ * No diagnosis data is ever shown to the patient.
+ */
+const PHASE_LABELS: Record<string, { label: string; icon: string; color: string }> = {
+  [AgentPhase.Intake]: {
+    label: 'Describing your symptoms',
+    icon: '💬',
+    color: 'bg-blue-50 text-blue-700 border-blue-200',
+  },
+  [AgentPhase.TriageModeA]: {
+    label: 'Reviewing your information',
+    icon: '🔍',
+    color: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  },
+  [AgentPhase.TriageModeB]: {
+    label: 'Follow-up questions',
+    icon: '🩺',
+    color: 'bg-purple-50 text-purple-700 border-purple-200',
+  },
+  [AgentPhase.Escalated]: {
+    label: 'Urgent attention required',
+    icon: '🚨',
+    color: 'bg-red-50 text-red-700 border-red-200',
+  },
+  [AgentPhase.Completed]: {
+    label: 'Assessment complete',
+    icon: '✅',
+    color: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  },
+};
 
 const TriageSessionPage: React.FC = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
-  const [session, setSession] = useState<TriageSession | null>(null);
+  const navigate = useNavigate();
+  const [session, setSession] = useState<PatientTriageSession | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [phase, setPhase] = useState<SessionPhase | null>(null);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -21,16 +55,19 @@ const TriageSessionPage: React.FC = () => {
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  // Load session data
   useEffect(() => {
     if (!sessionId) return;
     const load = async () => {
       try {
-        const [s, m] = await Promise.all([
+        const [s, m, p] = await Promise.all([
           triageApi.getSession(sessionId),
           triageApi.getMessages(sessionId),
+          triageApi.getSessionPhase(sessionId),
         ]);
         setSession(s);
         setMessages(m);
+        setPhase(p);
         if (s.status !== TriageSessionStatus.Active) setEnded(true);
       } catch { setError('Failed to load session.'); }
       finally { setLoading(false); }
@@ -38,9 +75,26 @@ const TriageSessionPage: React.FC = () => {
     load();
   }, [sessionId]);
 
+  // Auto-scroll to bottom
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, sending]);
+
+  // Refresh phase after each agent response
+  const refreshPhase = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const p = await triageApi.getSessionPhase(sessionId);
+      setPhase(p);
+      if (p.phase === AgentPhase.Completed || p.phase === AgentPhase.Escalated) {
+        const updatedSession = await triageApi.getSession(sessionId);
+        setSession(updatedSession);
+        if (updatedSession.status !== TriageSessionStatus.Active) {
+          setEnded(true);
+        }
+      }
+    } catch { /* phase refresh is best-effort */ }
+  }, [sessionId]);
 
   const handleSend = async () => {
     if (!input.trim() || !sessionId || sending) return;
@@ -66,10 +120,11 @@ const TriageSessionPage: React.FC = () => {
     try {
       const agentReply = await triageApi.sendMessage(sessionId, { content: text });
       setMessages((prev) => {
-        // Replace temp msg with server version if needed, add agent reply
         const withoutTemp = prev.filter((m) => m.id !== tempMsg.id);
         return [...withoutTemp, { ...tempMsg, id: `patient-${Date.now()}` }, agentReply];
       });
+      // Refresh the phase after getting a response
+      await refreshPhase();
     } catch {
       setError('Failed to send message. Please try again.');
     } finally {
@@ -87,6 +142,7 @@ const TriageSessionPage: React.FC = () => {
       setShowEndConfirm(false);
       const updatedSession = await triageApi.getSession(sessionId);
       setSession(updatedSession);
+      setPhase({ phase: AgentPhase.Completed, is_escalated: false });
     } catch { setError('Failed to end session.'); }
     finally { setEnding(false); }
   };
@@ -94,10 +150,26 @@ const TriageSessionPage: React.FC = () => {
   const isAgent = (sender: MessageSender) =>
     sender !== MessageSender.Patient;
 
+  const isEscalation = (msg: Message) =>
+    msg.message_type === MessageType.Escalation || msg.message_type === ('escalation' as MessageType);
+
+  const currentPhaseInfo = phase?.phase ? PHASE_LABELS[phase.phase] : null;
+
   if (loading) return <LoadingSpinner />;
 
   return (
     <div className="max-w-3xl mx-auto flex flex-col h-[calc(100vh-7rem)] animate-fade-in">
+      {/* Back navigation */}
+      <button
+        onClick={() => navigate(-1)}
+        className="self-start flex items-center gap-1 text-sm text-text-secondary hover:text-text-primary mb-3 transition-colors"
+      >
+        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+        </svg>
+        Back
+      </button>
+
       {/* Header */}
       <div className="flex items-center justify-between mb-4 flex-shrink-0">
         <div>
@@ -119,6 +191,28 @@ const TriageSessionPage: React.FC = () => {
           </Button>
         )}
       </div>
+
+      {/* Phase indicator */}
+      {currentPhaseInfo && (
+        <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm mb-3 flex-shrink-0 transition-all duration-300 ${currentPhaseInfo.color}`}>
+          <span className="text-base">{currentPhaseInfo.icon}</span>
+          <span className="font-medium">{currentPhaseInfo.label}</span>
+        </div>
+      )}
+
+      {/* Escalation banner — safety-critical, always shown to patient */}
+      {phase?.is_escalated && (
+        <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4 mb-3 flex-shrink-0 animate-pulse">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xl">🚨</span>
+            <h3 className="text-base font-bold text-red-800">Urgent Attention Required</h3>
+          </div>
+          <p className="text-sm text-red-700">
+            Based on your symptoms, you should seek immediate medical attention.
+            Please follow the instructions provided in the chat below.
+          </p>
+        </div>
+      )}
 
       {error && <ErrorAlert message={error} onDismiss={() => setError('')} className="mb-3 flex-shrink-0" />}
 
@@ -150,11 +244,25 @@ const TriageSessionPage: React.FC = () => {
             <div key={msg.id} className={`flex ${isAgent(msg.sender) ? 'justify-start' : 'justify-end'}`}>
               <div
                 className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                  isAgent(msg.sender)
+                  isEscalation(msg)
+                    ? 'bg-red-50 text-red-800 border border-red-200 rounded-bl-md'
+                    : isAgent(msg.sender)
                     ? 'bg-surface-tertiary text-text-primary rounded-bl-md'
                     : 'bg-medora-600 text-white rounded-br-md'
                 }`}
               >
+                {/* Agent sender label for phase awareness */}
+                {isAgent(msg.sender) && (
+                  <span className="text-[10px] font-semibold uppercase tracking-wider opacity-60 block mb-1">
+                    {msg.sender === MessageSender.IntakeAgent
+                      ? 'Medora Intake'
+                      : msg.sender === MessageSender.TriageAgent
+                      ? 'Medora Clinical'
+                      : msg.sender === MessageSender.System
+                      ? 'System'
+                      : 'Medora'}
+                  </span>
+                )}
                 {msg.content}
               </div>
             </div>

@@ -7,7 +7,7 @@ import uuid
 from ..database import Base
 from .enums import (
     UserRole, RegistrationMethod, TriageSessionStatus, UrgencyLevel, EscalationType,
-    ChatRetentionPolicy, MessageSender, MessageType, ConsentType, DoctorFeedbackRating, FeedbackCategory
+    ChatRetentionPolicy, MessageSender, MessageType, AgentPhase, ConsentType, DoctorFeedbackRating, FeedbackCategory
 )
 
 
@@ -142,6 +142,9 @@ class TriageSession(Base):
     urgency_level = Column(SQLEnum(UrgencyLevel), nullable=False)
     escalation_type = Column(SQLEnum(EscalationType), nullable=False)
     chat_retention_policy = Column(SQLEnum(ChatRetentionPolicy), nullable=False)
+    agent_phase = Column(SQLEnum(AgentPhase), nullable=True, default=AgentPhase.intake)
+    intake_summary_json = Column(JSONB, nullable=True)
+    clinical_picture_json = Column(JSONB, nullable=True)
     started_at = Column(TIMESTAMP, server_default=func.now())
     ended_at = Column(TIMESTAMP, nullable=True)
 
@@ -195,6 +198,9 @@ class ClinicalReport(Base):
     escalation_message = Column(Text, nullable=True)
     visible_to_patient = Column(Boolean, default=False)
     model_version = Column(String, nullable=True)
+    diagnosis_mode = Column(String, nullable=True)
+    diagnosis_pass_count = Column(Integer, nullable=True)
+    chunks_used_count = Column(Integer, nullable=True)
     generated_at = Column(TIMESTAMP, server_default=func.now())
 
     # Relationships

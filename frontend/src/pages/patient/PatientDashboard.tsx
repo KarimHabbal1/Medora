@@ -10,14 +10,14 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import ErrorAlert from '../../components/ui/ErrorAlert';
 import EmptyState from '../../components/ui/EmptyState';
 import type { PatientProfile } from '../../types/patient';
-import type { TriageSession } from '../../types/triage';
+import type { PatientTriageSession } from '../../types/triage';
 import { TriageSessionStatus } from '../../types/enums';
 
 const PatientDashboard: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [profile, setProfile] = useState<PatientProfile | null>(null);
-  const [sessions, setSessions] = useState<TriageSession[]>([]);
+  const [sessions, setSessions] = useState<PatientTriageSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -44,7 +44,7 @@ const PatientDashboard: React.FC = () => {
   const profileComplete = profile?.date_of_birth && profile?.sex;
   const recentSessions = sessions.slice(0, 5);
 
-  const statusBadge = (status: TriageSessionStatus) => {
+  const statusBadge = (status: string) => {
     switch (status) {
       case TriageSessionStatus.Active:
         return <Badge variant="primary">Active</Badge>;
@@ -52,6 +52,8 @@ const PatientDashboard: React.FC = () => {
         return <Badge variant="success">Completed</Badge>;
       case TriageSessionStatus.Cancelled:
         return <Badge variant="default">Cancelled</Badge>;
+      default:
+        return <Badge variant="default">{status}</Badge>;
     }
   };
 

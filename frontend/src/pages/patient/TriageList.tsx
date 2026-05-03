@@ -8,12 +8,12 @@ import Input from '../../components/ui/Input';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import ErrorAlert from '../../components/ui/ErrorAlert';
 import EmptyState from '../../components/ui/EmptyState';
-import type { TriageSession } from '../../types/triage';
+import type { PatientTriageSession } from '../../types/triage';
 import { TriageSessionStatus } from '../../types/enums';
 
 const TriageList: React.FC = () => {
   const navigate = useNavigate();
-  const [sessions, setSessions] = useState<TriageSession[]>([]);
+  const [sessions, setSessions] = useState<PatientTriageSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showModal, setShowModal] = useState(false);

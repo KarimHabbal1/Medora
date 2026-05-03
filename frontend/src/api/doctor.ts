@@ -6,7 +6,7 @@ import type {
   ReportSummary,
   FeedbackCreate,
 } from '../types/doctor';
-import type { ClinicalReport } from '../types/triage';
+import type { ClinicalReport, FeedbackCase, FeedbackStats } from '../types/triage';
 
 export const doctorApi = {
   getDashboard: async (): Promise<DoctorDashboardData> => {
@@ -41,6 +41,16 @@ export const doctorApi = {
     return response.data;
   },
 
+  getReportFullChain: async (reportId: string): Promise<{
+    report: ClinicalReport;
+    intake_summary: Record<string, unknown> | null;
+    clinical_picture: Record<string, unknown> | null;
+    agent_phase: string | null;
+  }> => {
+    const response = await apiClient.get(`/doctor/reports/${reportId}/full-chain`);
+    return response.data;
+  },
+
   submitFeedback: async (
     reportId: string,
     data: FeedbackCreate
@@ -49,6 +59,16 @@ export const doctorApi = {
       `/doctor/reports/${reportId}/feedback`,
       data
     );
+    return response.data;
+  },
+
+  getFeedbackStats: async (): Promise<FeedbackStats> => {
+    const response = await apiClient.get<FeedbackStats>('/doctor/feedback/statistics');
+    return response.data;
+  },
+
+  getPendingCases: async (): Promise<FeedbackCase[]> => {
+    const response = await apiClient.get<FeedbackCase[]>('/doctor/feedback/pending');
     return response.data;
   },
 };

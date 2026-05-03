@@ -45,6 +45,7 @@ export const MessageSender = {
   Patient: 'patient',
   IntakeAgent: 'intake_agent',
   RagAgent: 'rag_agent',
+  TriageAgent: 'triage_agent',
   System: 'system',
 } as const;
 export type MessageSender = (typeof MessageSender)[keyof typeof MessageSender];
@@ -56,8 +57,19 @@ export const MessageType = {
   Warning: 'warning',
   Summary: 'summary',
   StreamDelta: 'stream_delta',
+  Diagnosis: 'diagnosis',
+  Escalation: 'escalation',
 } as const;
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];
+
+export const AgentPhase = {
+  Intake: 'intake',
+  TriageModeA: 'triage_mode_a',
+  TriageModeB: 'triage_mode_b',
+  Escalated: 'escalated',
+  Completed: 'completed',
+} as const;
+export type AgentPhase = (typeof AgentPhase)[keyof typeof AgentPhase];
 
 export const ConsentType = {
   MedicalDisclaimer: 'medical_disclaimer',

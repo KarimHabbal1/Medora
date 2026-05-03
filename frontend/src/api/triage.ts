@@ -1,24 +1,30 @@
 import apiClient from './client';
 import type {
-  TriageSession,
+  PatientTriageSession,
   TriageSessionCreate,
   Message,
   MessageCreate,
+  SessionPhase,
 } from '../types/triage';
 
 export const triageApi = {
-  createSession: async (data: TriageSessionCreate): Promise<TriageSession> => {
-    const response = await apiClient.post<TriageSession>('/triage/sessions', data);
+  createSession: async (data: TriageSessionCreate): Promise<PatientTriageSession> => {
+    const response = await apiClient.post<PatientTriageSession>('/triage/sessions', data);
     return response.data;
   },
 
-  getSessions: async (): Promise<TriageSession[]> => {
-    const response = await apiClient.get<TriageSession[]>('/triage/sessions');
+  getSessions: async (): Promise<PatientTriageSession[]> => {
+    const response = await apiClient.get<PatientTriageSession[]>('/triage/sessions');
     return response.data;
   },
 
-  getSession: async (sessionId: string): Promise<TriageSession> => {
-    const response = await apiClient.get<TriageSession>(`/triage/sessions/${sessionId}`);
+  getSession: async (sessionId: string): Promise<PatientTriageSession> => {
+    const response = await apiClient.get<PatientTriageSession>(`/triage/sessions/${sessionId}`);
+    return response.data;
+  },
+
+  getSessionPhase: async (sessionId: string): Promise<SessionPhase> => {
+    const response = await apiClient.get<SessionPhase>(`/triage/sessions/${sessionId}/phase`);
     return response.data;
   },
 

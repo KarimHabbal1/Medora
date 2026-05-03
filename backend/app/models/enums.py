@@ -40,6 +40,7 @@ class MessageSender(str, Enum):
     patient = "patient"
     intake_agent = "intake_agent"
     rag_agent = "rag_agent"
+    triage_agent = "triage_agent"
     system = "system"
 
 
@@ -50,6 +51,16 @@ class MessageType(str, Enum):
     warning = "warning"
     summary = "summary"
     stream_delta = "stream_delta"
+    diagnosis = "diagnosis"
+    escalation = "escalation"
+
+
+class AgentPhase(str, Enum):
+    intake = "intake"
+    triage_mode_a = "triage_mode_a"
+    triage_mode_b = "triage_mode_b"
+    escalated = "escalated"
+    completed = "completed"
 
 
 class ConsentType(str, Enum):

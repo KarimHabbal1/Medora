@@ -10,6 +10,8 @@ export interface AdminUser {
   is_active: boolean;
   registration_method: string;
   created_at: string;
+  assigned_doctor_id?: string | null;
+  assigned_doctor_name?: string | null;
 }
 
 export interface AdminUserCreate {
@@ -32,4 +34,9 @@ export interface AdminUserUpdate {
 export interface Hospital {
   id: string;
   name: string;
+}
+
+export interface AssignDoctorRequest {
+  patient_id: string;
+  doctor_id: string;
 }

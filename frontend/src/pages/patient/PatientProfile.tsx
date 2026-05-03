@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { patientApi } from '../../api/patient';
 import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
@@ -8,6 +9,7 @@ import ErrorAlert from '../../components/ui/ErrorAlert';
 import type { PatientProfile, PatientUpdate } from '../../types/patient';
 
 const PatientProfilePage: React.FC = () => {
+  const navigate = useNavigate();
   const [profile, setProfile] = useState<PatientProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -62,6 +64,7 @@ const PatientProfilePage: React.FC = () => {
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
       <div>
+        <button onClick={() => navigate(-1)} className="text-medora-600 hover:text-medora-700 text-sm font-medium mb-4">← Back</button>
         <h1 className="text-2xl font-bold text-text-primary">Your Profile</h1>
         <p className="text-text-secondary mt-1">Update your personal information</p>
       </div>

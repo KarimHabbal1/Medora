@@ -1,1 +1,1 @@
-# Services for AI/RAG logic (mocked for now)
+# Services for AI agent logic and session management.

@@ -30,9 +30,29 @@ const AdminUsers: React.FC = () => {
   // Hospitals for dropdown
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
 
+  // Doctors for assignment
+  const [doctors, setDoctors] = useState<AdminUser[]>([]);
+  const [selectedDoctorByPatient, setSelectedDoctorByPatient] = useState<Record<string, string>>({});
+
   const loadUsers = () => {
     setLoading(true);
-    adminApi.getUsers().then(setUsers).catch(() => setError('Failed to load users.')).finally(() => setLoading(false));
+    adminApi.getUsers().then((usersData) => {
+      setUsers(usersData);
+      const selection: Record<string, string> = {};
+      const doctorList: AdminUser[] = [];
+
+      usersData.forEach((user) => {
+        if (user.role === UserRole.Patient && user.assigned_doctor_id) {
+          selection[user.id] = user.assigned_doctor_id;
+        }
+        if (user.role === UserRole.Doctor) {
+          doctorList.push(user);
+        }
+      });
+
+      setSelectedDoctorByPatient(selection);
+      setDoctors(doctorList);
+    }).catch(() => setError('Failed to load users.')).finally(() => setLoading(false));
   };
 
   useEffect(() => {
@@ -111,6 +131,37 @@ const AdminUsers: React.FC = () => {
     finally { setSaving(false); }
   };
 
+  const handleAssignDoctor = async (patientId: string, doctorId: string) => {
+    if (!doctorId) {
+      return;
+    }
+
+    try {
+      await adminApi.assignDoctor({ patient_id: patientId, doctor_id: doctorId });
+      setSelectedDoctorByPatient((prev) => ({ ...prev, [patientId]: doctorId }));
+      loadUsers(); // Refresh to show updated assignment
+    } catch (err: unknown) {
+      console.error('Assign doctor failed:', err);
+
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      let msg: string;
+      if (typeof detail === 'string') {
+        msg = detail;
+      } else if (Array.isArray(detail)) {
+        msg = detail.map((d: { msg?: string; loc?: (string | number)[] }) => {
+          const field = d.loc ? d.loc.filter((l) => l !== 'body').join(' → ') : '';
+          return field ? `${field}: ${d.msg ?? ''}` : (d.msg ?? '');
+        }).join(' | ');
+      } else if (detail && typeof detail === 'object') {
+        msg = JSON.stringify(detail);
+      } else {
+        msg = 'Failed to assign doctor.';
+      }
+
+      setError(msg);
+    }
+  };
+
   const roleBadge = (role: UserRole) => {
     const v = { [UserRole.Patient]: 'primary', [UserRole.Doctor]: 'success', [UserRole.Admin]: 'warning' } as const;
     return <Badge variant={v[role]}>{role}</Badge>;
@@ -186,6 +237,7 @@ const AdminUsers: React.FC = () => {
                 <th className="text-left px-5 py-3 font-medium text-text-secondary">Name</th>
                 <th className="text-left px-5 py-3 font-medium text-text-secondary">Email</th>
                 <th className="text-left px-5 py-3 font-medium text-text-secondary">Role</th>
+                <th className="text-left px-5 py-3 font-medium text-text-secondary">Assigned Doctor</th>
                 <th className="text-left px-5 py-3 font-medium text-text-secondary">Active</th>
                 <th className="text-left px-5 py-3 font-medium text-text-secondary">Created</th>
                 <th className="px-5 py-3"></th>
@@ -208,6 +260,22 @@ const AdminUsers: React.FC = () => {
                         <option value="admin">admin</option>
                       </select>
                     ) : roleBadge(u.role)}
+                  </td>
+                  <td className="px-5 py-3">
+                    {u.role === UserRole.Patient ? (
+                      <select
+                        className="rounded-lg border border-border px-2 py-1 text-sm"
+                        value={selectedDoctorByPatient[u.id] ?? ''}
+                        onChange={(e) => handleAssignDoctor(u.id, e.target.value)}
+                      >
+                        <option value="">— Assign Doctor —</option>
+                        {doctors.map((d) => (
+                          <option key={d.id} value={d.id}>{d.full_name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-text-tertiary">N/A</span>
+                    )}
                   </td>
                   <td className="px-5 py-3">
                     {editId === u.id ? (

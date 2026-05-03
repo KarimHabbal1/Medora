@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { AdminUser, AdminUserCreate, AdminUserUpdate, Hospital } from '../types/admin';
+import type { AdminUser, AdminUserCreate, AdminUserUpdate, Hospital, AssignDoctorRequest } from '../types/admin';
 
 export const adminApi = {
   createUser: async (data: AdminUserCreate): Promise<AdminUser> => {
@@ -19,6 +19,11 @@ export const adminApi = {
 
   getHospitals: async (): Promise<Hospital[]> => {
     const response = await apiClient.get<Hospital[]>('/admin/hospitals');
+    return response.data;
+  },
+
+  assignDoctor: async (data: AssignDoctorRequest): Promise<{ message: string }> => {
+    const response = await apiClient.post<{ message: string }>('/admin/assign-doctor', data);
     return response.data;
   },
 };

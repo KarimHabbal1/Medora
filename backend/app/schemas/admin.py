@@ -24,6 +24,8 @@ class UserResponseAdmin(BaseModel):
     is_active: bool
     registration_method: str
     created_at: datetime
+    assigned_doctor_id: Optional[UUID] = None
+    assigned_doctor_name: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -43,3 +45,8 @@ class HospitalResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class AssignDoctorRequest(BaseModel):
+    patient_id: UUID
+    doctor_id: UUID

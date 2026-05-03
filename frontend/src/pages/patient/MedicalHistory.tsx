@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { patientApi } from '../../api/patient';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -19,6 +20,7 @@ function toList(items: string[]): Record<string, unknown> {
 }
 
 const MedicalHistoryPage: React.FC = () => {
+  const navigate = useNavigate();
   const [history, setHistory] = useState<MedicalHistory | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -76,6 +78,7 @@ const MedicalHistoryPage: React.FC = () => {
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
       <div>
+        <button onClick={() => navigate(-1)} className="text-medora-600 hover:text-medora-700 text-sm font-medium mb-4">← Back</button>
         <h1 className="text-2xl font-bold text-text-primary">Medical History</h1>
         <p className="text-text-secondary mt-1">Separate multiple items with commas.</p>
       </div>
