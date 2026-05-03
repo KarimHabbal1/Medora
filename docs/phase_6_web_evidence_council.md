@@ -1,4 +1,4 @@
-# Phase 6: Privacy-Safe Web Evidence Agent with Source Council
+# Phase 6: Web Evidence System
 
 ## Overview
 
@@ -319,6 +319,80 @@ The final output is a `WebEvidenceResult`:
 ```
 
 This final object is suitable for storage, inspection, evaluation, and later inclusion in a doctor-facing report.
+
+---
+
+## Simplified Web Search Agent (`agents/web_search.py`)
+
+### Why a Simplified Version
+
+The council architecture provides comprehensive evidence validation but adds complexity that slows down the pipeline. For the benchmarking phase and initial deployment, a simplified agent was built that strips the pipeline to its core: search → fetch → LLM diagnosis.
+
+The council remains available for future use when evidence validation becomes critical (e.g., production deployment where false claims could cause harm). The simplified agent prioritizes speed and simplicity for the thesis evaluation.
+
+### Architecture
+
+The simplified agent has 4 steps:
+1. **Build search query** — takes patient symptoms, adds "diagnosis symptoms" prefix
+2. **Search SearXNG** — calls the metasearch engine, filters to whitelisted domains only
+3. **Fetch pages** — extracts text from top 5 results using BeautifulSoup, truncates to 2000 chars each
+4. **LLM diagnosis** — sends symptoms + all fetched content to an LLM with a structured diagnosis prompt
+
+### Whitelisted Sources (Strict)
+
+Only results from these domains are used — everything else is dropped:
+- PubMed, PMC, NCBI, NIH
+- Mayo Clinic, Cleveland Clinic, Hopkins Medicine
+- MedlinePlus, Merck Manuals
+- CDC, WHO, NICE
+- BMJ, NEJM, The Lancet
+- Medscape
+
+No Wikipedia, no WebMD, no HealthLine, no social media.
+
+### LLM Output Format
+
+The LLM returns structured JSON:
+```json
+{
+    "primary_diagnosis": "most likely condition",
+    "confidence": "high/moderate/low",
+    "evidence_summary": "2-3 sentences connecting symptoms to diagnosis",
+    "key_findings": [{"claim": "...", "source": "...", "url": "..."}],
+    "differential_diagnoses": ["other possible conditions"]
+}
+```
+
+### Model Support
+
+Uses `config.make_llm()` — works with both OpenAI and Ollama:
+```bash
+# With GPT-5.4-mini
+python agents/web_search.py --symptoms "painful rash, fever, joint pain" --model gpt-5.4-mini --provider openai
+
+# With local Ollama model
+python agents/web_search.py --symptoms "painful rash, fever, joint pain" --model gemma4:latest
+```
+
+### Benchmark Results
+
+Tested on MedCaseReasoning Test Set C (50 cases — conditions outside the textbook):
+
+| Model | Accuracy | Latency | Avg Sources |
+|---|---|---|---|
+| GPT-5.4-mini | 42% | 6.1s | 1.56 |
+| Gemma 4 (local) | 36% | 16.6s | 1.48 |
+
+Compared to RAG-only on the same test set (30%), web search improves accuracy by 40% relative.
+
+### Integration with Triage Agent
+
+The web search agent is triggered when the Triage Agent's RAG retrieval recall is low:
+```
+Triage Agent → RAG retrieval → low recall detected → web search fallback → combined evidence → diagnosis
+```
+
+This is not yet implemented as an automated trigger — currently the web search agent is called standalone. Phase 9 (future work) would integrate it as an automatic fallback.
 
 ---
 

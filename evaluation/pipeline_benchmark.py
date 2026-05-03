@@ -655,23 +655,28 @@ class PipelineBenchmarkRunner:
         judge_model: str = JUDGE_MODEL,
         retrieve_k: int = RERANK_TOP_K_RETRIEVE,
         return_k: int = RERANK_TOP_K_RETURN,
+        no_rag: bool = False,
     ):
         self.test_cases = test_cases
         self.models = models
         self.ollama_url = ollama_url
         self.retrieve_k = retrieve_k
         self.return_k = return_k
+        self.no_rag = no_rag
 
-        # ── Load RAG pipeline (shared across all model runs) ──────────────────
-        print("\nLoading RAG pipeline (shared across all models)...")
-        self._device = detect_device()
-        self._collection = open_collection(CHROMA_DIR)
-        self._bi_encoder = load_bi_encoder(EMBEDDING_MODEL, self._device)
-        self._reranker, self._reranker_device = load_cross_encoder(RERANKER_MODEL)
-        print(
-            f"  RAG pipeline ready "
-            f"(bi-encoder on {self._device}, reranker on {self._reranker_device})"
-        )
+        # ── Load RAG pipeline (shared across all model runs) — skip if no_rag ─
+        if not no_rag:
+            print("\nLoading RAG pipeline (shared across all models)...")
+            self._device = detect_device()
+            self._collection = open_collection(CHROMA_DIR)
+            self._bi_encoder = load_bi_encoder(EMBEDDING_MODEL, self._device)
+            self._reranker, self._reranker_device = load_cross_encoder(RERANKER_MODEL)
+            print(
+                f"  RAG pipeline ready "
+                f"(bi-encoder on {self._device}, reranker on {self._reranker_device})"
+            )
+        else:
+            print("\n  [NO-RAG MODE] Skipping RAG pipeline — raw model output only.")
 
         # ── Load judge model ──────────────────────────────────────────────────
         print(f"\nLoading judge model ({judge_model})...")
@@ -791,29 +796,37 @@ class PipelineBenchmarkRunner:
         t_start = time.perf_counter()
 
         try:
-            # ── Step 1: RAG retrieval + reranking ─────────────────────────────
-            chunks = retrieve_and_rerank(
-                case_prompt,
-                self._collection,
-                self._bi_encoder,
-                self._reranker,
-                self.retrieve_k,
-                self.return_k,
-            )
+            if self.no_rag:
+                # ── NO-RAG MODE: give case directly to LLM ──────────────────
+                user_content = (
+                    f"Patient presentation:\n{case_prompt}\n\n"
+                    f"Based on your medical knowledge, produce a structured diagnosis report."
+                )
+                prompt_tokens = _estimate_tokens(_DIAGNOSIS_SYSTEM + user_content)
+            else:
+                # ── Step 1: RAG retrieval + reranking ─────────────────────────
+                chunks = retrieve_and_rerank(
+                    case_prompt,
+                    self._collection,
+                    self._bi_encoder,
+                    self._reranker,
+                    self.retrieve_k,
+                    self.return_k,
+                )
 
-            # ── Step 2: Retrieval quality metrics ─────────────────────────────
-            retrieval_recall = self._compute_retrieval_recall(chunks, ground_truth)
-            retrieval_precision = self._compute_retrieval_precision(chunks, source_chapter)
-            result["retrieval_recall"] = retrieval_recall
-            result["retrieval_precision"] = round(retrieval_precision, 4)
+                # ── Step 2: Retrieval quality metrics ─────────────────────────
+                retrieval_recall = self._compute_retrieval_recall(chunks, ground_truth)
+                retrieval_precision = self._compute_retrieval_precision(chunks, source_chapter)
+                result["retrieval_recall"] = retrieval_recall
+                result["retrieval_precision"] = round(retrieval_precision, 4)
 
-            # ── Step 3: Build LLM prompt ──────────────────────────────────────
-            context = _chunks_to_context(chunks)
-            user_content = (
-                f"Patient presentation:\n{case_prompt}\n\n"
-                f"Retrieved medical textbook passages:\n\n{context}"
-            )
-            prompt_tokens = _estimate_tokens(_DIAGNOSIS_SYSTEM + user_content)
+                # ── Step 3: Build LLM prompt ──────────────────────────────────
+                context = _chunks_to_context(chunks)
+                user_content = (
+                    f"Patient presentation:\n{case_prompt}\n\n"
+                    f"Retrieved medical textbook passages:\n\n{context}"
+                )
+                prompt_tokens = _estimate_tokens(_DIAGNOSIS_SYSTEM + user_content)
 
             # ── Step 4: LLM generation with timeout ───────────────────────────
             def _timeout_handler(signum, frame):
@@ -1241,6 +1254,11 @@ def _parse_args() -> argparse.Namespace:
         metavar="N",
         help=f"Passages to keep after reranking (default: {RERANK_TOP_K_RETURN})",
     )
+    parser.add_argument(
+        "--no-rag",
+        action="store_true",
+        help="Skip RAG retrieval — test raw model diagnostic ability only.",
+    )
     return parser.parse_args()
 
 
@@ -1364,6 +1382,7 @@ def main() -> None:
             judge_model=args.judge_model,
             retrieve_k=args.retrieve_k,
             return_k=args.return_k,
+            no_rag=args.no_rag,
         )
 
         t0 = time.perf_counter()
