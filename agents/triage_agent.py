@@ -1649,6 +1649,14 @@ class TriageSession:
         """Return the full diagnosis report dict."""
         return self._state.get("diagnosis", {})
 
+    def get_patient_answers(self) -> dict:
+        """Return all patient answers collected during triage (Pass 1 Q&A + differentiating)."""
+        answers = dict(self._state.get("patient_answers", {}))
+        diff = self._state.get("diff_answers", {})
+        if diff:
+            answers.update(diff)
+        return answers
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Display helpers

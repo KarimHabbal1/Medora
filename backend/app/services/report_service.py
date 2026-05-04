@@ -20,6 +20,9 @@ _project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
+
 logger = logging.getLogger(__name__)
 
 
@@ -44,35 +47,103 @@ def _parse_urgency(urgency_str: str) -> UrgencyLevel:
     return mapping.get(urgency_str.lower().strip(), UrgencyLevel.unknown)
 
 
+_STRUCTURE_SYMPTOMS_PROMPT = """\
+You are a clinical data structurer. Given a patient conversation history from a medical \
+triage system, extract and structure the symptoms into a concise clinical summary \
+optimized for a diagnostic web search.
+
+Rules:
+- Extract all symptoms, their characteristics, and relevant history
+- Include: onset, duration, character, location, severity, aggravating/relieving factors, associated symptoms
+- Use clinical terminology where appropriate but keep it searchable
+- Do NOT include any diagnosis or clinical reasoning — only patient-reported information
+- Be concise — one paragraph, no bullet points
+
+Return ONLY the structured symptom summary as plain text. No JSON, no markdown.\
+"""
+
+
+def _structure_symptoms_via_llm(intake_summary: Dict[str, Any], llm) -> str:
+    """Use LLM to structure patient conversation data into a clean symptom summary."""
+    from langchain_core.messages import SystemMessage, HumanMessage
+
+    parts = []
+
+    # Intake data (Mode A — common symptoms)
+    symptoms = intake_summary.get("symptoms", [])
+    if symptoms:
+        parts.append(f"Presenting symptoms: {', '.join(symptoms)}")
+
+    answers = intake_summary.get("answers", {})
+    if answers:
+        parts.append("Patient interview responses:")
+        for q, a in answers.items():
+            parts.append(f"  Q: {q}")
+            parts.append(f"  A: {a}")
+
+    red_flags = intake_summary.get("red_flags", [])
+    if red_flags:
+        flags = [f.get("flag", str(f)) if isinstance(f, dict) else str(f) for f in red_flags]
+        parts.append(f"Red flags identified: {', '.join(flags)}")
+
+    urgency = intake_summary.get("urgency", "")
+    if urgency and urgency != "unknown":
+        parts.append(f"Urgency: {urgency}")
+
+    # Raw complaint (Mode B — uncommon symptoms)
+    raw_complaint = intake_summary.get("raw_complaint", "")
+    if raw_complaint:
+        parts.append(f"Patient complaint: {raw_complaint}")
+
+    # Triage Q&A (Mode B — collected during Pass 1/2/3)
+    triage_answers = intake_summary.get("triage_answers", {})
+    if triage_answers:
+        parts.append("Triage follow-up responses:")
+        for q, a in triage_answers.items():
+            parts.append(f"  Q: {q}")
+            parts.append(f"  A: {a}")
+
+    if not parts:
+        return ""
+
+    conversation_text = "\n".join(parts)
+
+    response = llm.invoke([
+        SystemMessage(content=_STRUCTURE_SYMPTOMS_PROMPT),
+        HumanMessage(content=conversation_text),
+    ])
+
+    return response.content.strip()
+
+
 def _run_web_search(intake_summary: Dict[str, Any], diagnosis: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Structure symptoms from triage output and run the web search agent."""
+    """Structure symptoms via LLM and run the web search agent."""
     try:
         from agents.web_search import search_medical_evidence, make_llm as ws_make_llm
+        from config import make_llm as config_make_llm
 
         searxng_url = os.getenv("SEARXNG_BASE_URL", "").rstrip("/")
+        print(f"[WebSearch] SEARXNG_BASE_URL = {searxng_url!r}", flush=True)
         if not searxng_url:
-            logger.info("Web search skipped — no SEARXNG_BASE_URL configured")
+            print("[WebSearch] Skipped — no SEARXNG_BASE_URL configured", flush=True)
             return None
 
-        symptoms = intake_summary.get("symptoms", [])
-        if isinstance(symptoms, list):
-            symptom_text = ", ".join(symptoms)
-        else:
-            symptom_text = str(symptoms)
+        # Use LLM to structure the symptoms from conversation data
+        structuring_llm = config_make_llm()
+        structured_symptoms = _structure_symptoms_via_llm(intake_summary, structuring_llm)
+        print(f"[WebSearch] Structured symptoms: {structured_symptoms[:150]}", flush=True)
 
-        answers = intake_summary.get("answers", {})
-        if answers:
-            context_parts = [f"{v}" for v in answers.values() if v]
-            symptom_text += ". " + ". ".join(context_parts[:3])
+        if not structured_symptoms.strip():
+            print("[WebSearch] Skipped — no symptoms to structure", flush=True)
+            return None
 
         provider = os.getenv("MEDORA_LLM_PROVIDER", "openai")
         model = "gpt-4o-mini" if provider == "openai" else "llama3.1:8b"
-        llm = ws_make_llm(model=model, provider=provider)
+        ws_llm = ws_make_llm(model=model, provider=provider)
 
-        logger.info("Running web search for symptoms: %s", symptom_text[:100])
         result = search_medical_evidence(
-            symptoms=symptom_text,
-            llm=llm,
+            symptoms=structured_symptoms,
+            llm=ws_llm,
             searxng_url=searxng_url,
             max_sources=5,
         )
@@ -88,8 +159,10 @@ def _run_web_search(intake_summary: Dict[str, Any], diagnosis: Dict[str, Any]) -
                 for s in result.get("sources", [])
             ],
         }
-    except Exception:
-        logger.exception("Web search failed")
+    except Exception as exc:
+        print(f"[WebSearch] FAILED: {exc}", flush=True)
+        import traceback
+        traceback.print_exc()
         return None
 
 
@@ -138,6 +211,11 @@ def _build_from_agent_output(
 
     # Parse sections from the diagnosis report text
     history = _extract_section(report_text, "Clinical Reasoning")
+    # Strip Clinical Reasoning from the summary since it's shown separately
+    summary_for_display = re.sub(
+        r'(?:#+\s*)?Clinical Reasoning\s*\n.*?(?=\n#+\s|\Z)',
+        '', report_text, flags=re.IGNORECASE | re.DOTALL
+    ).strip()
     suspected = _extract_section(report_text, "Primary Diagnosis")
     red_flags_text = _extract_section(report_text, "Red Flags")
     recommended = _extract_section(report_text, "Management Considerations") or _extract_section(report_text, "Recommended")
@@ -153,7 +231,9 @@ def _build_from_agent_output(
     escalation_msg = intake_summary.get("escalation_message") if escalated else None
 
     # Run web search for external evidence
+    print(f"[WebSearch] Starting web search. intake keys: {list(intake_summary.keys())}", flush=True)
     web_results = _run_web_search(intake_summary, diagnosis)
+    print(f"[WebSearch] Result: {'found' if web_results else 'None'}", flush=True)
 
     return ClinicalReportResponse(
         id=uuid4(),
@@ -162,7 +242,7 @@ def _build_from_agent_output(
         doctor_id=UUID(doctor_id),
         presenting_complaints=presenting_complaints,
         history_of_presenting_complaint={"reasoning": history} if history else {},
-        summary_text=report_text[:2000] if report_text else "Assessment completed.",
+        summary_text=summary_for_display[:2000] if summary_for_display else "Assessment completed.",
         suspected_conditions={"primary": suspected} if suspected else {},
         triggered_red_flags=triggered_red_flags,
         urgency_level=urgency,
