@@ -1161,3 +1161,42 @@ set SEARXNG_BASE_URL=http://localhost:8080
 python -m agents.web_evidence.cli --question "latest guideline for community acquired pneumonia antibiotics in adults" --approach deterministic_only
 ```
 
+---
+
+## Production Integration (Phase 9)
+
+The simplified web search agent (`agents/web_search.py`) is integrated into the production web application. When a triage session completes and a clinical report is generated, the web search agent runs automatically to provide an independent second opinion from external medical sources.
+
+### How It Works in Production
+
+1. **Triage completes** — the textbook-based diagnosis is generated via RAG.
+2. **Symptom structuring** — an LLM takes the full patient conversation (intake Q&A + triage Q&A + differentiating questions) and produces a structured clinical symptom summary. The triage diagnosis is NOT included — the web search is independent.
+3. **Web search** — the structured symptoms are searched via SearXNG against whitelisted medical sources (PubMed, Mayo Clinic, Cleveland Clinic, UpToDate, MedlinePlus, etc.).
+4. **Source extraction** — page content is fetched and an LLM extracts the primary diagnosis, confidence level, evidence summary, key findings with citations, and differential diagnoses.
+5. **Report storage** — the web search results are stored in the `web_search_results` JSONB column of the `clinical_reports` table.
+6. **Doctor view** — the doctor sees the textbook diagnosis and web search diagnosis side-by-side on the clinical report page, allowing comparison of both sources.
+
+### Whitelisted Sources
+
+Only results from trusted medical domains are used:
+
+- `pubmed.ncbi.nlm.nih.gov`, `pmc.ncbi.nlm.nih.gov`, `ncbi.nlm.nih.gov`
+- `mayoclinic.org`, `clevelandclinic.org`, `uptodate.com`
+- `medlineplus.gov`, `who.int`, `cdc.gov`, `nice.org.uk`
+- `bmj.com`, `nejm.org`, `thelancet.com`, `nih.gov`
+- `hopkinsmedicine.org`, `merckmanuals.com`, `medscape.com`
+
+### Doctor Report Layout
+
+The clinical report page shows two columns:
+- **Left (blue):** Textbook Diagnosis (RAG) — primary diagnosis, differentials, clinical reasoning from the medical textbook
+- **Right (teal):** Web Search Diagnosis — independent diagnosis from external sources with key findings and source citations
+
+Below the side-by-side diagnoses:
+- Clinical Reasoning (detailed textbook-grounded reasoning)
+- Red Flags (if present)
+- Recommended Actions (management + workup merged)
+- Doctor Feedback form (thumbs up/down + correction)
+
+This design gives the doctor two independent diagnostic opinions — one grounded in the textbook, one grounded in current web evidence — enabling informed clinical judgment.
+
