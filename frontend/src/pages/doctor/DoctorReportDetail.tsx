@@ -41,7 +41,7 @@ const DoctorReportDetail: React.FC = () => {
       </div>
 
       {/* Escalation banner */}
-      {report.escalation_message && (
+      {report.escalation_message ? (
         <Card className="border-red-200 bg-red-50/50">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-lg">⚠</span>
@@ -49,7 +49,7 @@ const DoctorReportDetail: React.FC = () => {
           </div>
           <p className="text-sm text-red-700">{report.escalation_message}</p>
         </Card>
-      )}
+      ) : null}
 
       {/* Side-by-side: Textbook Diagnosis + Web Search Diagnosis */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -114,72 +114,74 @@ const DoctorReportDetail: React.FC = () => {
       </div>
 
       {/* Clinical Reasoning */}
-      {report.history_of_presenting_complaint && (
+      {report.history_of_presenting_complaint ? (
         <Card>
           <h3 className="text-sm font-semibold text-text-secondary mb-2">Clinical Reasoning</h3>
           <div className="text-sm text-text-primary leading-relaxed prose prose-sm max-w-none">
             <Markdown>{typeof report.history_of_presenting_complaint === 'string'
               ? report.history_of_presenting_complaint
               : typeof report.history_of_presenting_complaint === 'object' && report.history_of_presenting_complaint !== null
-                ? (report.history_of_presenting_complaint as Record<string, unknown>).reasoning as string || ''
+                ? String((report.history_of_presenting_complaint as Record<string, unknown>).reasoning || '')
                 : ''}</Markdown>
           </div>
         </Card>
-      )}
+      ) : null}
 
       {/* Red Flags */}
-      {report.triggered_red_flags && typeof report.triggered_red_flags === 'object' && (
-        (() => {
-          const flags = report.triggered_red_flags as Record<string, unknown>;
-          const flagList = (flags.flags || []) as Array<Record<string, string>>;
-          if (flagList.length === 0) return null;
-          return (
-            <Card className="border-amber-200 bg-amber-50/50">
-              <h3 className="text-sm font-semibold text-amber-800 mb-2">Red Flags</h3>
-              <ul className="list-disc list-inside space-y-1">
-                {flagList.map((f, i) => (
-                  <li key={i} className="text-sm text-amber-900">
-                    {typeof f === 'string' ? f : f.flag || JSON.stringify(f)}
-                    {f.urgency && <span className="text-xs text-amber-600 ml-1">({f.urgency})</span>}
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          );
-        })()
-      )}
+      {(() => {
+        if (!report.triggered_red_flags || typeof report.triggered_red_flags !== 'object') return null;
+        const flags = report.triggered_red_flags as Record<string, unknown>;
+        const flagList = (flags.flags || []) as Array<Record<string, string>>;
+        if (flagList.length === 0) return null;
+        return (
+          <Card className="border-amber-200 bg-amber-50/50">
+            <h3 className="text-sm font-semibold text-amber-800 mb-2">Red Flags</h3>
+            <ul className="list-disc list-inside space-y-1">
+              {flagList.map((f, i) => (
+                <li key={i} className="text-sm text-amber-900">
+                  {typeof f === 'string' ? f : f.flag || JSON.stringify(f)}
+                  {f.urgency ? <span className="text-xs text-amber-600 ml-1">({f.urgency})</span> : null}
+                </li>
+              ))}
+            </ul>
+          </Card>
+        );
+      })()}
 
       {/* Recommended Actions — merged recommended_action + suggested_workup */}
-      {(report.recommended_action || report.suggested_workup) && (
+      {(report.recommended_action || report.suggested_workup) ? (
         <Card>
           <h3 className="text-sm font-semibold text-text-secondary mb-2">Recommended Actions</h3>
           <div className="text-sm text-text-primary leading-relaxed prose prose-sm max-w-none">
-            {report.recommended_action && (
-              <Markdown>{typeof report.recommended_action === 'string'
-                ? report.recommended_action
-                : ''}</Markdown>
-            )}
-            {report.suggested_workup && (
+            {typeof report.recommended_action === 'string' ? (
+              <Markdown>{report.recommended_action}</Markdown>
+            ) : null}
+            {report.suggested_workup ? (
               <>
                 <p className="text-xs font-semibold text-text-secondary mt-3 mb-1">Suggested Workup</p>
                 <Markdown>{typeof report.suggested_workup === 'string'
                   ? report.suggested_workup
                   : typeof report.suggested_workup === 'object' && report.suggested_workup !== null
-                    ? (report.suggested_workup as Record<string, unknown>).workup as string || ''
+                    ? String((report.suggested_workup as Record<string, unknown>).workup || '')
                     : ''}</Markdown>
               </>
-            )}
+            ) : null}
           </div>
         </Card>
-      )}
+      ) : null}
 
       {/* Specialty Routing — only if present */}
-      {report.specialty_routing && typeof report.specialty_routing === 'object' && (report.specialty_routing as Record<string, unknown>).routing && (
-        <Card>
-          <h3 className="text-sm font-semibold text-text-secondary mb-2">Specialty Routing</h3>
-          <p className="text-sm text-text-primary">{(report.specialty_routing as Record<string, unknown>).routing as string}</p>
-        </Card>
-      )}
+      {(() => {
+        if (!report.specialty_routing || typeof report.specialty_routing !== 'object') return null;
+        const routing = String((report.specialty_routing as Record<string, unknown>).routing || '');
+        if (!routing) return null;
+        return (
+          <Card>
+            <h3 className="text-sm font-semibold text-text-secondary mb-2">Specialty Routing</h3>
+            <p className="text-sm text-text-primary">{routing}</p>
+          </Card>
+        );
+      })()}
 
       {/* Feedback */}
       <Card>

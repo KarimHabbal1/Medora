@@ -49,10 +49,10 @@ const TriageSessionPage: React.FC = () => {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [ending, setEnding] = useState(false);
+  const [, setEnding] = useState(false);
   const [error, setError] = useState('');
   const [ended, setEnded] = useState(false);
-  const [showEndConfirm, setShowEndConfirm] = useState(false);
+  const [, setShowEndConfirm] = useState(false);
   const [, setStreamingId] = useState<string | null>(null);
   const [, setStreamedText] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -150,21 +150,6 @@ const TriageSessionPage: React.FC = () => {
     } finally {
       inputRef.current?.focus();
     }
-  };
-
-  const handleEnd = async () => {
-    if (!sessionId) return;
-    setEnding(true);
-    setError('');
-    try {
-      await triageApi.endSession(sessionId);
-      setEnded(true);
-      setShowEndConfirm(false);
-      const updatedSession = await triageApi.getSession(sessionId);
-      setSession(updatedSession);
-      setPhase({ phase: AgentPhase.Completed, is_escalated: false });
-    } catch { setError('Failed to end session.'); }
-    finally { setEnding(false); }
   };
 
   const isAgent = (sender: MessageSender) =>
