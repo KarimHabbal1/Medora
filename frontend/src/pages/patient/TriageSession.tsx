@@ -49,12 +49,8 @@ const TriageSessionPage: React.FC = () => {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [, setEnding] = useState(false);
   const [error, setError] = useState('');
   const [ended, setEnded] = useState(false);
-  const [, setShowEndConfirm] = useState(false);
-  const [, setStreamingId] = useState<string | null>(null);
-  const [, setStreamedText] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -123,25 +119,18 @@ const TriageSessionPage: React.FC = () => {
     try {
       const agentReply = await triageApi.sendMessage(sessionId, { content: text });
       const replyId = agentReply.id;
-      // Add reply with empty content — we'll stream it in
       setMessages((prev) => {
         const withoutTemp = prev.filter((m) => m.id !== tempMsg.id);
         return [...withoutTemp, { ...tempMsg, id: `patient-${Date.now()}` }, { ...agentReply, content: '' }];
       });
       setSending(false);
 
-      // Stream words in
       const words = agentReply.content.split(' ');
-      setStreamingId(replyId);
-      setStreamedText('');
       for (let i = 0; i < words.length; i++) {
         const partial = words.slice(0, i + 1).join(' ');
-        setStreamedText(partial);
         setMessages((prev) => prev.map((m) => m.id === replyId ? { ...m, content: partial } : m));
         await new Promise((r) => setTimeout(r, 30));
       }
-      setStreamingId(null);
-      setStreamedText('');
 
       await refreshPhase();
     } catch {
