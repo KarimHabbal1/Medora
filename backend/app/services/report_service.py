@@ -22,6 +22,7 @@ if _project_root not in sys.path:
 
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
+load_dotenv()  # also try CWD
 
 logger = logging.getLogger(__name__)
 
