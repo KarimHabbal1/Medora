@@ -53,8 +53,8 @@ const TriageSessionPage: React.FC = () => {
   const [error, setError] = useState('');
   const [ended, setEnded] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
-  const [streamingId, setStreamingId] = useState<string | null>(null);
-  const [streamedText, setStreamedText] = useState('');
+  const [, setStreamingId] = useState<string | null>(null);
+  const [, setStreamedText] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -205,11 +205,6 @@ const TriageSessionPage: React.FC = () => {
             </span>
           </div>
         </div>
-        {!ended && (
-          <Button variant="danger" size="sm" onClick={() => setShowEndConfirm(true)}>
-            End Session
-          </Button>
-        )}
       </div>
 
       {/* Phase indicator */}
@@ -236,22 +231,6 @@ const TriageSessionPage: React.FC = () => {
 
       {error && <ErrorAlert message={error} onDismiss={() => setError('')} className="mb-3 flex-shrink-0" />}
 
-      {/* End confirm modal */}
-      {showEndConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="bg-white rounded-xl border border-border shadow-modal p-6 max-w-sm mx-4">
-            <h3 className="text-lg font-semibold text-text-primary mb-2">End Session?</h3>
-            <p className="text-sm text-text-secondary mb-4">
-              This will finalize the triage and generate a report for your doctor. You won&apos;t be able to send more messages.
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={() => setShowEndConfirm(false)}>Cancel</Button>
-              <Button variant="danger" onClick={handleEnd} loading={ending}>End Session</Button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Chat area */}
       <div className="flex-1 overflow-y-auto bg-white rounded-xl border border-border p-4 chat-scroll">
         {messages.length === 0 && !ended && (
@@ -260,18 +239,28 @@ const TriageSessionPage: React.FC = () => {
           </div>
         )}
         <div className="space-y-3">
-          {messages.map((msg) => (
+          {messages
+            .filter((msg) => {
+              if (msg.sender === MessageSender.System && msg.content.includes('CLINICIAN HANDOVER')) return false;
+              return true;
+            })
+            .map((msg) => {
+            const isEscalationMsg = isEscalation(msg);
+            const displayContent = isEscalationMsg
+              ? 'Based on your symptoms, please seek immediate medical attention. Your report has been sent to your doctor for urgent review.'
+              : msg.content;
+
+            return (
             <div key={msg.id} className={`flex ${isAgent(msg.sender) ? 'justify-start' : 'justify-end'}`}>
               <div
                 className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                  isEscalation(msg)
+                  isEscalationMsg
                     ? 'bg-red-50 text-red-800 border border-red-200 rounded-bl-md'
                     : isAgent(msg.sender)
                     ? 'bg-surface-tertiary text-text-primary rounded-bl-md'
                     : 'bg-medora-600 text-white rounded-br-md'
                 }`}
               >
-                {/* Agent sender label for phase awareness */}
                 {isAgent(msg.sender) && (
                   <span className="text-[10px] font-semibold uppercase tracking-wider opacity-60 block mb-1">
                     {msg.sender === MessageSender.IntakeAgent
@@ -283,10 +272,11 @@ const TriageSessionPage: React.FC = () => {
                       : 'Medora'}
                   </span>
                 )}
-                {msg.content}
+                {displayContent}
               </div>
             </div>
-          ))}
+            );
+          })}
           {sending && (
             <div className="flex justify-start">
               <div className="bg-surface-tertiary px-4 py-3 rounded-2xl rounded-bl-md">
