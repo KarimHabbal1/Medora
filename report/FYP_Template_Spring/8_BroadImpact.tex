@@ -1,0 +1,77 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Broad Impact
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\chapter{Broad Impact: United Nations SDGs}
+\label{chapter:Broad_Impact}
+
+Medora is most directly related to Sustainable Development Goal 3, Good Health and Well-Being, and Sustainable Development Goal 9, Industry, Innovation and Infrastructure. It also touches SDG 10, Reduced Inequalities, because a well-governed digital intake system could help patients who face barriers to timely specialist care. We discuss impact carefully because the prototype is not deployed in a hospital and has not been clinically validated.
+
+\section{SDG 3: Good Health and Well-Being}
+
+SDG 3 focuses on healthy lives and well-being. Medora contributes to this goal by targeting the early information-gathering stage of care. A patient may know that something is wrong but may not know which details are clinically important. The Intake Agent helps collect those details in a structured way and highlights red flags. The Triage Agent then provides a provisional, textbook-grounded diagnosis report that can help a physician review the case more quickly.
+
+The impact is not that Medora diagnoses patients independently. The safer and more realistic impact is that it can reduce the friction between patient presentation and clinician review. If a doctor receives a clean summary, relevant red flags, textbook evidence, and current source-linked web evidence where appropriate, the doctor can spend more time evaluating the case and less time reconstructing the basic history.
+
+\section{SDG 9: Industry, Innovation and Infrastructure}
+
+SDG 9 includes resilient infrastructure and innovation. Medora contributes by showing how a healthcare AI system can be built as modular infrastructure rather than as a single opaque chatbot.
+
+\begin{table}[htbp]
+\centering
+\caption{Infrastructure design choices related to SDG 9.}
+\label{tab:sdg9_infrastructure}
+\begin{tabular}{p{0.30\textwidth} p{0.56\textwidth}}
+\toprule
+\textbf{Design choice} & \textbf{Impact}\\
+\midrule
+Reproducible data pipeline & The medical corpus can be rebuilt and inspected instead of being hidden behind a prompt.\\
+Local vector store & The core retrieval system does not require a managed cloud vector database.\\
+Hospital-server inference & Patient-facing AI can run on hospital-controlled infrastructure with open-source models, reducing dependence on external model APIs.\\
+Privacy-safe web evidence & Current guidelines and warnings can be checked without sending patient identifiers into web search.\\
+Source governance & Trusted-source tiers, rejected domains, recency checks, and council review make current evidence more auditable than unrestricted search.\\
+Graph-based agents & Intake and triage logic are explicit state machines, which makes behavior easier to test and revise.\\
+Role-based application layer & FastAPI, PostgreSQL, JWT role guards, and React interfaces separate patient interaction, doctor report review, and administration.\\
+Traceable storage design & Clinical reports, feedback, RAG query metadata, audit logs, and performance logs are represented in the application database while ChromaDB remains responsible for vector search.\\
+Doctor feedback path & The system has a practical route toward supervised improvement using reviewed cases.\\
+Benchmark infrastructure & End-to-end benchmarks compare RAG, web search, API models, and open-source models so design decisions are evidence-based.\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+This architecture matters because healthcare systems should not depend on one-off prototypes. The implementation separates data, retrieval, agents, memory, and feedback so that each layer can be improved without rewriting the whole system.
+
+\section{SDG 10: Reduced Inequalities}
+
+Access to medical guidance is uneven. Patients in underserved areas may delay care because of cost, distance, or limited appointment availability. A properly governed system like Medora could eventually help patients prepare better information before seeing a clinician, especially when integrated into low-cost digital health services.
+
+The same technology can also increase inequality if it is deployed only in English, requires high-end devices, or assumes stable internet access. Our current prototype is English-only and not deployed. Future versions should support Arabic, mobile-first interfaces, accessibility standards, and low-bandwidth operation.
+
+\section{Responsible AI Impact}
+
+Medora handles a high-stakes domain, so responsible AI is part of the broad impact. Table \ref{tab:responsible_ai_safeguards} summarizes the safeguards built into the current prototype and the remaining risks.
+
+\begin{longtable}{p{0.28\textwidth} p{0.34\textwidth} p{0.28\textwidth}}
+\caption{Responsible AI safeguards and remaining risks.}
+\label{tab:responsible_ai_safeguards}\\
+\toprule
+\textbf{Area} & \textbf{Current safeguard} & \textbf{Remaining risk}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Area} & \textbf{Current safeguard} & \textbf{Remaining risk}\\
+\midrule
+\endhead
+Diagnosis authority & Diagnosis is provisional and intended for doctor review. & A user may still over-trust fluent output.\\
+Evidence grounding & Triage uses retrieved textbook passages and source reporting. & The evidence base is currently one 2022 textbook.\\
+Current evidence & Web Evidence Council removes identifiers, ranks trusted sources, checks recency, detects conflicts, and returns limitations. & Search coverage, page-fetching quality, and local model quality still need production validation.\\
+Feedback & Doctor confirmation or correction can be stored. & No large clinician-reviewed dataset exists yet.\\
+Patient memory and records & Patient profiles, medical history, consents, sessions, reports, and feedback are represented in the app data model, with local memory artifacts still used by the agent layer. & Production deployment needs retention policy, conflict handling, backup policy, and privacy review.\\
+Runtime model privacy & The intended deployment uses open-source models on hospital servers, so patient conversations are not sent to commercial LLM APIs. & The local model still requires validation, access control, monitoring, and secure infrastructure.\\
+Application access control & The prototype uses JWT authentication, role guards, doctor-only report routes, and admin-only user management. & Secure cookie/session design, rate limiting, HTTPS, audit review workflows, and penetration testing are still required.\\
+Benchmark transparency & RAG and web search were tested on textbook, MedQA, and rare-case datasets with exact, semantic, partial, and mismatch labels. & Benchmark labels are still not a substitute for local clinician validation.\\
+Transparency & Limitations are documented explicitly in the report. & Deployment would require formal risk management and clinical validation.\\
+\bottomrule
+\end{longtable}
+
+The main ethical risk is over-trust. A fluent AI diagnosis can sound more certain than it is. For that reason, Medora must remain framed as clinical decision support unless and until it passes formal clinical validation, privacy review, and regulatory review.

@@ -1,0 +1,86 @@
+\documentclass[12pt, twoside, a4paper]{report}
+\textheight23cm \textwidth16cm
+
+%------- DEFINE PACKAGES -------%
+
+\usepackage{graphicx}
+\usepackage{latexsym}
+\usepackage{epsf}
+\usepackage{epsfig}
+\usepackage{color}
+\usepackage{a4}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsxtra}
+\usepackage{fancyhdr}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage[nottoc]{tocbibind}
+\usepackage{algorithmic}
+\usepackage{algorithm}
+\usepackage{subfigure}
+\usepackage{cite}
+\usepackage{fancybox}
+\usepackage{pdfpages}
+\usepackage{tabularx}
+\usepackage[utf8]{inputenc}
+\usepackage{siunitx}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,shapes.multipart,fit,calc}
+\bibliographystyle{ieeetr}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+\setlist[itemize]{leftmargin=1.2cm}
+\setlist[enumerate]{leftmargin=1.2cm}
+
+\newcommand{\projectname}{Medora}
+\newcommand{\reporttitle}{Medora: An AI-Powered Clinical Intake and Triage System}
+\definecolor{medorablue}{RGB}{31,78,121}
+\definecolor{medoragreen}{RGB}{54,119,90}
+\definecolor{medoraamber}{RGB}{173,110,36}
+\definecolor{medorared}{RGB}{150,62,62}
+\definecolor{medoragray}{RGB}{82,91,102}
+\definecolor{medoralight}{RGB}{244,247,250}
+\tikzset{
+medoraBlock/.style={draw=medorablue, rounded corners=2pt, align=center, fill=medorablue!8, minimum height=0.82cm, text width=2.7cm, font=\small},
+medoraData/.style={draw=medoragreen, rounded corners=2pt, align=center, fill=medoragreen!9, minimum height=0.82cm, text width=2.7cm, font=\small},
+medoraWarn/.style={draw=medoraamber, rounded corners=2pt, align=center, fill=medoraamber!12, minimum height=0.82cm, text width=2.7cm, font=\small},
+medoraRisk/.style={draw=medorared, rounded corners=2pt, align=center, fill=medorared!8, minimum height=0.82cm, text width=2.7cm, font=\small},
+medoraStore/.style={draw=medoragray, cylinder, shape border rotate=90, aspect=0.22, align=center, fill=medoragray!9, minimum height=1.0cm, text width=2.2cm, font=\small},
+medoraArrow/.style={-{Latex[length=2.2mm]}, thick, draw=medoragray},
+medoraDashed/.style={-{Latex[length=2.2mm]}, thick, dashed, draw=medoragray}
+}
+\begin{document}
+\pagestyle{empty}
+
+\include{1_cover}
+\pagenumbering{roman} \setcounter{page}{2}
+
+\include{2_Acknowledgements}
+\include{3_ExecutiveSummary}
+
+\pagestyle{empty}
+\tableofcontents
+\listoffigures
+\listoftables
+\newpage
+
+\pagestyle{plain} \pagenumbering{arabic} \setcounter{page}{1}
+
+\include{4_Introduction}
+\include{5_DesignProcess}
+\include{6_Implementation}
+\include{7_Experiment+Testing}
+\include{8_BroadImpact}
+\include{9_ListofResources}
+
+\appendix
+\include{10_Minutes}
+
+\bibliography{12_ref}
+\end{document}

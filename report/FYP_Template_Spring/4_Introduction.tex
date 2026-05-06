@@ -1,0 +1,141 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Introduction
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\chapter{Introduction}
+\label{chapter:introduction}
+
+Medora is our Spring final year project implementation of an AI-powered clinical intake and triage system. It receives a patient's complaint in natural language, conducts a structured intake conversation, detects red flags, prepares a clinician handover note, retrieves evidence from \textit{CURRENT Medical Diagnosis and Treatment 2022 (CMDT 2022)}, and generates a provisional diagnosis report for doctor review. We built Medora as a research prototype. It is not an autonomous medical device, and it is not presented as a replacement for a physician. The intended role is narrower and safer: Medora organizes patient information, grounds diagnostic reasoning in retrievable medical text, and leaves the final decision to a clinician.
+
+The project changed substantially between the Fall and Spring semesters. In Fall 2025, our progress report presented Healthify as a broad healthcare platform. Healthify included patient guidance, wearable integration, medical record summarization, journaling, emergency room optimization, bed allocation, and hospital resource management. That concept was useful because it helped us understand the healthcare problem space, but it was too broad to implement deeply in one final year project. In Spring 2026, we narrowed the work to the part that was both technically meaningful and possible to evaluate: clinical intake, textbook-grounded triage, patient memory, and doctor feedback. This pivot is important because almost all final implementation work belongs to the Spring Medora system, while the Fall work explains the origin of the problem and the reasoning behind the scope reduction.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tikzpicture}[node distance=1.2cm]
+\node[medoraWarn, text width=3.7cm] (fall) {\textbf{Fall 2025}\\Healthify broad platform\\AI consultation, wearables, records, hospital operations};
+\node[medoraBlock, right=1.2cm of fall, text width=3.8cm] (review) {\textbf{Scope review}\\Too many modules\\Too little depth\\Hard to evaluate safely};
+\node[medoraData, right=1.2cm of review, text width=4.0cm] (spring) {\textbf{Spring 2026}\\Medora focused system\\Intake, RAG triage, memory, feedback};
+\draw[medoraArrow] (fall) -- (review);
+\draw[medoraArrow] (review) -- (spring);
+\node[below=0.55cm of review, align=center, font=\small, text width=8.4cm] {The Fall semester defined the healthcare motivation. The Spring semester produced the implemented and evaluated system described in this report.};
+\end{tikzpicture}}
+\caption{Project evolution from the Fall Healthify concept to the Spring Medora implementation.}
+\label{fig:fall_to_spring}
+\end{figure}
+
+\section{Motivation and Problem}
+
+Healthcare intake often starts with unstructured patient language. A patient may say ``my chest feels tight'', ``I am short of breath'', or ``my legs are swollen'', while the care team needs structured clinical information: onset, duration, severity, associated symptoms, risk factors, medication history, allergies, red flags, and relevant past conditions. When this information is collected incompletely, the physician receives a weaker starting point. When the same information is collected repeatedly, patients and care teams lose time. When an AI system reasons without grounded evidence, the output can sound confident while being clinically unsafe.
+
+The Fall progress report helped us identify why this problem matters in realistic healthcare settings. It documented pressure points such as limited specialist access, fragmented health records, missed appointments, and emergency department congestion. It also cited research showing that non-urgent emergency department use, outpatient no-shows, and uneven e-health adoption remain practical challenges \cite{uscher2013ed,aoa2018noshows,halwani2021ehealth}. We kept that motivation, but we changed the engineering target. Instead of trying to build a full digital hospital platform, we focused on the patient-to-clinician information bottleneck.
+
+The final problem statement is therefore specific: we need a system that can transform a natural-language complaint into a structured clinical summary, identify urgent patterns, retrieve relevant medical evidence, and produce a provisional diagnosis report that a doctor can review. The system must also preserve traceability, because a clinician should be able to inspect why the AI suggested a diagnosis. Medora addresses this by combining structured symptom objects, retrieval-augmented generation over \textit{CURRENT Medical Diagnosis and Treatment 2022}, a graph-based intake workflow, a graph-based triage workflow, a privacy-safe web evidence council for current sources, patient memory, doctor feedback, and a role-based web application that separates patient interaction from doctor report review \cite{cmdt2022,lewis2020rag}. A deployment goal is to run the patient-facing system on hospital servers with open-source models, so protected patient conversations and longitudinal memory do not need to be sent to external commercial model providers.
+
+\section{Final System Boundary}
+
+We made a strict distinction between prototype capability and production readiness. This helped us avoid overstating the project while still documenting the full engineering scope. The implemented system processes a textbook corpus, retrieves evidence, conducts intake, performs provisional triage reasoning, stores patient memory, saves cases for doctor feedback, retrieves current trusted web evidence through a privacy-safe council, benchmarks the main retrieval and generation paths, provides a FastAPI and PostgreSQL backend, provides a React and TypeScript frontend, integrates the agent pipeline into the web application, and prepares an open-source deployment environment. The intended deployment boundary is also strict: patient-facing inference should run inside the hospital environment using open-source models. GPT-4o was used for offline development and evaluation tasks, such as resolving a small number of corrupted PDF terms, creating static symptom objects for review, scoring retrieval passages during experiments, and supporting development-time agent tests. GPT-5.4-family models were used for benchmark comparison and judge tasks where documented. These models are not the intended hospital runtime models. In a hospital deployment, the current LLM adapter must point to a validated hospital-hosted open-source or OpenAI-compatible local model. What remains is not the application shell itself, but clinical validation, production security hardening, durable distributed agent-session storage, true streaming, HTTPS deployment, stronger audit workflows, and regulatory review.
+
+\begin{table}[htbp]
+\centering
+\caption{Implemented prototype scope and remaining production work.}
+\label{tab:implemented_scope}
+\begin{tabular}{p{0.28\textwidth} p{0.32\textwidth} p{0.30\textwidth}}
+\toprule
+\textbf{Area} & \textbf{Implemented in Spring Medora} & \textbf{Remaining production work}\\
+\midrule
+Knowledge base & CMDT 2022 PDF extraction, PUA correction, structured sections, structured chunks, embeddings, ChromaDB & Multi-source local knowledge base and automatic guideline refresh\\
+Clinical intake & LangGraph Intake Agent for 11 common symptoms, red flag detection, multi-symptom handling, handover note & Full multilingual intake, clinician-approved question bank\\
+Triage & Triage Agent with common and uncommon symptom modes, retrieval, reranking, sufficiency checks, provisional report & Clinician-led validation, regulatory review, deployment safety case\\
+Current web evidence & Privacy-safe Web Evidence Council with de-identification, trusted-source ranking, claim extraction, council review, and structured JSON output & Stronger current-source validation and production search configuration\\
+Benchmarking & End-to-end RAG and web search benchmark runs over textbook, MedQA, and MedCaseReasoning cases & Larger clinician-labeled hospital benchmark\\
+Inference privacy & Patient-facing inference should run on hospital-owned infrastructure using open-source models. EC2/Ollama deployment preparation has started. & Production hardening and server validation\\
+Continuity & Patient Memory plus database-backed patient profiles, medical history, consent records, and triage sessions & Production conflict resolution, privacy review, and long-term retention policy\\
+Feedback & Doctor review case store, database feedback records, confirmation or rejection, and JSONL export for future training & Clinician-reviewed dataset collection and retraining governance\\
+Application layer & FastAPI backend, PostgreSQL schema, JWT authentication, React frontend, role-based routing, doctor report review, admin user management, and Phase 9 agent integration & HTTPS, secure token storage, true streaming, multi-worker session persistence, and formal deployment hardening\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Requirements and Specifications}
+
+The requirements were shaped by three realities. First, the medical domain requires caution, so the system must remain grounded and reviewable. Second, the project must be reproducible from the repository, so the core retrieval system cannot depend on inaccessible hospital data or a paid managed vector database. Third, the final report must show measurable engineering progress, not only a prompt demonstration.
+
+\begin{longtable}{p{0.20\textwidth} p{0.45\textwidth} p{0.25\textwidth}}
+\caption{Medora requirements and implementation evidence.}
+\label{tab:requirements}\\
+\toprule
+\textbf{Requirement type} & \textbf{Specification} & \textbf{Implementation evidence}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Requirement type} & \textbf{Specification} & \textbf{Implementation evidence}\\
+\midrule
+\endhead
+Clean knowledge base & Extract CMDT 2022 into readable clinical records with no remaining Private Use Area corruption. & 7,942 section records, 43 chapters, 8,655,430 clean characters, 0 remaining PUA characters.\\
+Clinical chunking & Produce chunks that preserve medical context rather than splitting text arbitrarily. & 5,631 structure-aware chunks with chapter, section, subsection, page range, and source metadata.\\
+Baseline comparison & Keep a fixed-window baseline so we can compare structured chunking against a simple alternative. & Baseline produced 8,216 chunks with 200-word windows and 50-word overlap.\\
+Medical retrieval & Use an embedding model suitable for medical passage retrieval and long enough for chunk context. & \texttt{embeddinggemma-300m-medical}, 768 dimensions, 2,048-token context window.\\
+Local persistence & Store vectors locally with document text and metadata filters. & ChromaDB persistent collection \texttt{tmt\_chunks}.\\
+Retrieval quality & Ensure the expected clinical area appears in the context window used by the Triage Agent. & 100.0\% Chapter Hit@3 and 100.0\% Section Hit@3 on validation queries.\\
+Passage quality & Improve the usefulness of the top passages sent to the LLM. & BGE reranker raised the offline GPT-4o judge comparison score from 4.05 to 4.35.\\
+Safe intake & Ask patient-friendly questions, handle vague answers, detect red flags, and avoid diagnosing during intake. & Intake Agent with LangGraph state, follow-up logic, and nine-section handover.\\
+Evidence-grounded triage & Generate a provisional diagnosis report using retrieved textbook evidence. & Triage Agent Mode A and Mode B with retrieval, reranking, and sufficiency checks.\\
+Continuity & Remember stable patient facts while confirming that they are still true. & Patient Memory JSON profiles with session history and known-fact confirmation.\\
+Feedback & Store complete cases for doctor review and future supervised learning. & FeedbackStore case JSON files, review status, doctor correction fields, and JSONL export.\\
+Safety boundary & Avoid claiming autonomous diagnosis or clinical deployment readiness. & Report language, diagnosis format, and feedback design all keep doctor review central.\\
+Deployment privacy & Avoid sending patient conversations or patient memory to external commercial model APIs during runtime. & Hospital-server open-source inference is the target deployment model.\\
+Current evidence governance & Retrieve updated public medical evidence without exposing patient identifiers or trusting arbitrary web pages. & Web Evidence Council with deterministic PII removal, source tiers, rejected-domain policy, recency checks, conflict review, safety review, and final council decision.\\
+Benchmark evidence & Measure the full RAG and web search paths beyond isolated retrieval metrics. & Phase 8 benchmark across textbook cases, MedQA, MedCaseReasoning, API models, and open-source Ollama models.\\
+Backend application & Persist users, sessions, reports, feedback, and traceability metadata behind authenticated HTTP routes. & FastAPI, PostgreSQL, SQLAlchemy, Alembic, JWT role guards, clinical reports, RAG trace tables, audit logs, and performance logs.\\
+Frontend application & Provide role-specific interfaces without placing clinical reasoning in the browser. & React and TypeScript frontend with patient, doctor, and admin routes, protected routing, triage chat, report review, feedback, and admin user management.\\
+Full-stack integration & Connect the live agent pipeline to the web application while keeping diagnosis reports doctor-only. & AgentSessionManager, shared model cache, background memory and feedback tasks, and doctor-only report endpoints.\\
+\bottomrule
+\end{longtable}
+
+\section{Deliverables}
+
+Table \ref{tab:deliverables} lists the final Spring deliverables in a form that matches the repository structure. The application stack is included as prototype implementation work, while production hardening and clinical deployment remain outside the project claim.
+
+\begin{longtable}{p{0.24\textwidth} p{0.42\textwidth} p{0.24\textwidth}}
+\caption{Final report deliverables.}
+\label{tab:deliverables}\\
+\toprule
+\textbf{Deliverable} & \textbf{Description} & \textbf{Status}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Deliverable} & \textbf{Description} & \textbf{Status}\\
+\midrule
+\endhead
+PDF extraction pipeline & PyMuPDF parser, PUA mapping, font-aware classification, two-column reading order, chapter and section state machine. & Implemented\\
+Chunking pipeline & Structure-aware chunks plus fixed-size baseline for comparison. & Implemented\\
+Structured symptom dataset & Fifteen-field JSON objects for 11 common presenting symptoms. & Implemented\\
+Embedding pipeline & Batch embedding of 5,631 chunks with medical sentence-transformer model. & Implemented\\
+Vector store & Persistent ChromaDB collection with documents, embeddings, metadata, and filters. & Implemented\\
+Retrieval validation & Manual clinical query set, Hit@k, MRR, metadata filter checks, and k-sensitivity analysis. & Implemented\\
+Reranking layer & BGE cross-encoder reranking compared with MedCPT and bi-encoder baseline. & Implemented\\
+Intake Agent & LangGraph state machine for structured clinical intake and handover generation. & Implemented\\
+Triage Agent & Common-symptom and uncommon-symptom diagnosis workflows with evidence retrieval. & Implemented\\
+Patient Memory & Local patient profile schema, update logic, and intake/triage context injection. & Implemented\\
+Feedback Loop & Doctor review storage, analytics, and JSONL export for future fine-tuning. & Implemented\\
+Web Evidence Council & Privacy-safe current evidence retrieval with PII sanitizer, query builder, SearXNG/static search, page fetching, source ranking, claim extraction, council review, synthesis, and JSON output. & Implemented\\
+Benchmarking suite & End-to-end RAG and web search benchmark scripts, model configurations, test-set handling, matching logic, failure attribution, and result artifacts. & Implemented\\
+Deployment preparation & EC2 g5.2xlarge setup, A10G GPU validation, Docker installation, Ollama setup, open-source model downloads, vector-store rebuild, and model-provider CLI flags. & Implemented as preparation\\
+Backend API and database & FastAPI app, PostgreSQL schema, SQLAlchemy models, Alembic migrations, JWT authentication, role guards, clinical report storage, RAG traceability, audit/performance logs, doctor feedback, and admin routes. & Implemented prototype\\
+Frontend UI & React, TypeScript, Vite, role-based routing, API modules, AuthContext, patient triage chat, doctor report review, feedback form, and admin user management. & Implemented prototype\\
+Full-stack integration & FastAPI routes connected to Intake Agent, Triage Agent, Patient Memory, FeedbackStore, shared model cache, and doctor-only diagnosis visibility. & Implemented prototype\\
+\bottomrule
+\end{longtable}
+
+\section{Related Work and Positioning}
+
+Medora sits between symptom checkers, clinical decision support, and retrieval-augmented generation. Existing work has shown that machine learning can support specific medical tasks such as image classification, and intelligent systems have been studied for triage and clinical decision support \cite{esteva2017dermatology,fernandes2020triage}. Those systems also show why task framing matters. A tool that independently advises a patient is not the same as a tool that prepares a physician-facing intake summary. We designed Medora for the second role.
+
+Retrieval-augmented generation is central to the Triage Agent. Instead of asking the LLM to rely only on internal knowledge, we retrieve textbook passages and ask the model to reason over them \cite{lewis2020rag}. The reranking results in this project reinforce an important lesson from modern LLM evaluation: a metric must match the real use case. Strict chapter matching alone made reranking look weaker, while content-level scoring showed that BGE improved the evidence passed to the LLM \cite{zheng2023judge}.
+
+Healthcare software also has standards and governance expectations. HL7 FHIR is relevant for future interoperability, HIPAA and GDPR inform privacy expectations, ISO/IEC 27001 informs security management, ISO/IEC 25010 helps frame software quality, WCAG 2.1 guides accessibility, and ISO 14971 and IEC 62304 become relevant if a research prototype moves toward medical device software \cite{hl7fhir,hipaa,gdpr,iso27001,iso25010,wcag21,iso14971,iec62304}. The Web Evidence Council also reflects source-governance ideas: patient identifiers should not enter web search, trusted public medical sources should be ranked above consumer content, and conflicting evidence should be flagged rather than hidden. We do not claim compliance with these standards. We use them as design references and as a reminder that deployment would require production-grade security, access control, audit trails, consent handling, clinical validation, and formal risk management.
+
+\section{Report Organization}
+
+The rest of the report follows the engineering sequence of the project. Chapter \ref{chapter:design_process} explains design constraints, alternatives, iterations, and standards. Chapter \ref{chapter:Implementation} documents the implementation phase by phase. Chapter \ref{chapter:Experiments_Results} presents the experimental setup, results, analysis, limitations, and future work. Chapter \ref{chapter:Broad_Impact} discusses responsible impact and the relevant United Nations Sustainable Development Goals. Chapter \ref{chapter:List_of_Resources_and_Engineering_Tools} lists the resources and engineering tools used in the project. The appendix includes the available meeting minutes.

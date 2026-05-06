@@ -1,0 +1,104 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% List of Resources
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\chapter{List of Resources and Engineering Tools}
+\label{chapter:List_of_Resources_and_Engineering_Tools}
+
+This chapter lists the main resources and engineering tools used across the Fall and Spring semesters. The Fall semester provided the healthcare motivation and the original Healthify concept. The Spring semester produced the Medora implementation documented in this report.
+
+\section{Software Tools and Libraries}
+
+\begin{longtable}{p{0.25\textwidth} p{0.48\textwidth} p{0.17\textwidth}}
+\caption{Main software tools used in Medora.}
+\label{tab:software_tools}\\
+\toprule
+\textbf{Tool} & \textbf{Use in the project} & \textbf{Phase}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Tool} & \textbf{Use in the project} & \textbf{Phase}\\
+\midrule
+\endhead
+Python & Main implementation language for data processing, retrieval, evaluation, agents, memory, and feedback. & All\\
+FastAPI & Backend HTTP framework for authentication, patient, triage, doctor, admin, and health routes. & 8.1, 9\\
+PostgreSQL & Relational application database for users, profiles, sessions, reports, feedback, traceability, audit, and performance records. & 8.1, 9\\
+SQLAlchemy and Alembic & ORM models and schema migrations for the backend database. & 8.1, 9\\
+JWT, passlib, and bcrypt & Token-based authentication, role-protected routes, and password hashing. & 8.1, 8.2, 9\\
+PyMuPDF & PDF span extraction, font inspection, coordinate analysis, and parser implementation. & 1.1\\
+OpenAI API, GPT-4o, GPT-5.4-mini, and GPT-5.4 & Residual PUA correction, GPT-4o versus Llama symptom-structuring comparison, static symptom artifact generation, LLM-as-judge reranker comparison, development-time agent testing, and benchmark comparison. Not intended for hospital runtime inference. & 1.1, 1.3, 3, 4, 5, 8\\
+Ollama, Llama, Gemma, Phi, DeepSeek, Aloe, and MedLlama & Local open-source model comparison for symptom structuring, web evidence, RAG benchmarking, and hospital-server deployment preparation. & 1.3, 6, 8, deployment\\
+OpenBioLLM-8B or equivalent open-source medical LLM & Target runtime model family for hospital-server inference after validation. & Deployment\\
+sentence-transformers & Loading the medical embedding model and cross-encoder rerankers. & 2, 3\\
+PyTorch & Device acceleration and tensor computation for embedding and reranking models. & 2, 3\\
+ChromaDB & Persistent local vector store with metadata filtering and document storage. & 2.2\\
+NumPy & Embedding matrix storage, shape validation, and compressed artifact handling. & 2.1\\
+LangGraph & Stateful graph control for Intake Agent and Triage Agent. & 4, 5\\
+LLM adapters & Model interface for the agents. The deployed adapter should point to a hospital-hosted open-source model rather than a commercial hosted API. & 4, 5\\
+SearXNG & Self-hosted metasearch backend for trusted medical web evidence retrieval and web search benchmarking. & 6, 8\\
+requests and BeautifulSoup & Page fetching, HTML parsing, and readable text extraction for web evidence and web search. & 6, 8\\
+Hugging Face datasets & Loading MedCaseReasoning cases for rare-case benchmark evaluation. & 8\\
+AWS EC2 g5.2xlarge and Docker & GPU deployment-preparation environment for Ollama models, vector-store rebuilds, and open-source model benchmarks. & Deployment\\
+React, TypeScript, and Vite & Frontend application framework, static typing, development server, and production bundling. & 8.2, 9\\
+React Router & Protected patient, doctor, and admin route groups. & 8.2, 9\\
+Tailwind CSS & Frontend styling system for the role-based web application. & 8.2, 9\\
+Axios & Typed HTTP client with token attachment and authentication error handling. & 8.2, 9\\
+Node.js and npm & Frontend dependency management and build tooling. & 8.2, 9\\
+JSON and JSONL & Section records, chunks, patient profiles, feedback cases, and future training export. & All\\
+Git & Version control and project organization. & All\\
+TikZ & Source-controlled architecture diagrams and workflow visuals inside the report. & Report\\
+\bottomrule
+\end{longtable}
+
+\section{Medical and Technical References}
+
+The primary medical source for the implemented RAG system is \textit{CURRENT Medical Diagnosis and Treatment 2022} \cite{cmdt2022}. The Web Evidence Council adds current public medical sources through trusted source tiers, including government, guideline, biomedical literature, and professional medical sources. The system also draws design motivation from literature on AI diagnosis, triage, wearable health monitoring, hospital operations, and retrieval-augmented generation \cite{esteva2017dermatology,fernandes2020triage,judson2020selftriage,seshadri2020wearables,bayoumy2021wearables,lewis2020rag}. For standards and future deployment design, we considered HL7 FHIR, HIPAA, GDPR, ISO/IEC 27001, ISO/IEC 25010, WCAG 2.1, ISO 14971, and IEC 62304 \cite{hl7fhir,hipaa,gdpr,iso27001,iso25010,wcag21,iso14971,iec62304}.
+
+\section{Hardware and Runtime Environment}
+
+The phase documentation records Apple Silicon MPS acceleration for embedding runs and CPU fallback when MPS is unavailable. Deployment preparation used an AWS EC2 \texttt{g5.2xlarge} instance with an NVIDIA A10G GPU, 24GB VRAM, 32GB RAM, a 300GB EBS volume, Ubuntu 22.04, Docker, and Ollama. The application prototype uses a PostgreSQL-backed FastAPI service and a Vite-powered React frontend.
+
+\section{Reproducibility References}
+
+Operational commands and environment-specific setup steps are kept in the repository documentation rather than repeated in the final report. Table \ref{tab:reproducibility_references} points to the source files that document how each major artifact can be rebuilt, inspected, or run.
+
+\begin{longtable}{p{0.28\textwidth} p{0.34\textwidth} p{0.28\textwidth}}
+\caption{Repository references for reproducibility.}
+\label{tab:reproducibility_references}\\
+\toprule
+\textbf{Artifact or workflow} & \textbf{Repository reference} & \textbf{What it documents}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Artifact or workflow} & \textbf{Repository reference} & \textbf{What it documents}\\
+\midrule
+\endhead
+Textbook extraction and correction & \texttt{docs/phase\_1\_1\_pdf\_extraction.md} & Parser design, PUA correction process, output schema, and verification method.\\
+Chunking and symptom structuring & \texttt{docs/phase\_1\_2\_chunking.md}, \texttt{docs/phase\_1\_3\_symptom\_structuring.md} & Chunking rules, statistics, structured symptom schema, and model comparison.\\
+Embeddings, vector store, and retrieval & \texttt{docs/phase\_2\_1\_embedding\_pipeline.md}, \texttt{docs/phase\_2\_2\_vector\_store.md}, \texttt{docs/phase\_2\_3\_retrieval\_validation.md} & Embedding model choice, ChromaDB construction, metadata filters, and retrieval metrics.\\
+Reranking and agents & \texttt{docs/phase\_3\_reranking.md}, \texttt{docs/phase\_4\_1\_intake\_agent.md}, \texttt{docs/phase\_5\_triage\_agent.md} & Reranker comparison, intake graph behavior, triage modes, and report generation.\\
+Memory, feedback, and web evidence & \texttt{docs/phase\_5\_patient\_memory.md}, \texttt{docs/phase\_7\_feedback\_loop.md}, \texttt{docs/phase\_6\_web\_evidence\_council.md} & Patient context storage, doctor review data, web evidence privacy, source ranking, and council behavior.\\
+Benchmarking and deployment preparation & \texttt{docs/phase\_8\_benchmarking.md}, \texttt{docs/deployment\_guide.md} & Benchmark datasets, model profiles, matching logic, EC2/Ollama setup, and deployment limits.\\
+Backend and frontend application & \texttt{docs/phase\_8.1\_backend\_api\_database.md}, \texttt{docs/phase\_8\_2\_frontend.md}, \texttt{backend/README.md}, \texttt{frontend/README.md} & API routes, database schema, role access, frontend structure, and local application workflow.\\
+Full-stack agent integration & \texttt{docs/phase\_9\_app\_integration.md} & Agent session manager, shared model cache, backend/frontend integration, and remaining production limits.\\
+\bottomrule
+\end{longtable}
+
+\section{Team Contributions}
+
+The exact implementation work overlapped across the team, especially during debugging, design review, and report preparation. Table \ref{tab:team_contributions} records the contribution statement based on the Fall report context, phase documentation, and repository history.
+
+\begin{table}[htbp]
+\centering
+\caption{Team contribution summary.}
+\label{tab:team_contributions}
+\begin{tabular}{p{0.25\textwidth} p{0.62\textwidth}}
+\toprule
+\textbf{Member} & \textbf{Contribution summary}\\
+\midrule
+Hamza Atout & Healthcare problem framing, Fall Healthify concept, system requirements, report preparation, and agent-level design discussion.\\
+Kosay Darwish & System architecture planning, engineering constraints, healthcare workflow analysis, and report preparation.\\
+Karim Habbal & Medora codebase implementation, phase documentation, retrieval evaluation, agent workflows, memory, feedback, and final report source.\\
+\bottomrule
+\end{tabular}
+\end{table}

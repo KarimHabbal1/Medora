@@ -1,0 +1,1412 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Implementation
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\chapter{Implementation}
+\label{chapter:Implementation}
+
+This chapter documents the implemented Medora system from raw textbook PDF to agent workflows, current web evidence, patient memory, doctor feedback, benchmarking, backend and frontend application infrastructure, full-stack agent integration, and deployment preparation. We present the work phase by phase because each phase produced an artifact that the next phase depended on. This structure also makes the engineering trail clear: when a decision was made, what alternatives we considered, what failed, what result we measured, and what limitation remained.
+
+\section{Implementation Overview}
+
+The implementation is organized around data processing, retrieval, evaluation, agents, web evidence, memory, feedback, a FastAPI backend, a React frontend, and deployment preparation. The main code directories are \texttt{data\_processing/}, \texttt{embeddings/}, \texttt{evaluation/}, \texttt{rag/}, \texttt{agents/}, \texttt{backend/}, and \texttt{frontend/}. The \texttt{docs/} directory contains the phase documentation that records the technical reasoning behind this report.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tikzpicture}[x=1cm,y=1cm]
+\node[font=\small\bfseries, anchor=west, text=medoragray] at (-1.35,0.95) {Knowledge preparation};
+\node[font=\small\bfseries, anchor=west, text=medoragray] at (-1.35,-2.90) {Runtime agents and review};
+\node[font=\small\bfseries, anchor=west, text=medoragray] at (-1.35,-6.95) {Benchmarking, application, and deployment};
+
+\node[medoraBlock] (p11) at (0,0) {1.1\\PDF extraction};
+\node[medoraBlock] (p12) at (3.05,0) {1.2\\Chunking};
+\node[medoraData] (p21) at (6.10,0) {2.1\\Embeddings};
+\node[medoraData] (p22) at (9.15,0) {2.2\\ChromaDB};
+\node[medoraData] (p23) at (12.20,0) {2.3\\Retrieval\\validation};
+
+\node[medoraBlock] (p13) at (3.05,-1.45) {1.3\\Symptom JSON};
+\node[medoraBlock] (p3) at (12.20,-1.45) {3\\Reranking};
+\node[medoraBlock] (p4) at (3.05,-3.85) {4\\Intake Agent};
+\node[medoraBlock] (p5) at (7.35,-3.85) {5\\Triage Agent};
+\node[medoraWarn] (p6) at (11.65,-3.85) {6\\Web Evidence\\Council};
+\node[medoraStore] (pm) at (3.05,-5.45) {Patient\\Memory};
+\node[medoraStore] (p7) at (9.15,-5.45) {7\\Feedback\\Loop};
+\node[medoraData] (p8) at (5.25,-7.75) {8\\Benchmarking};
+\node[medoraData] (dep) at (9.55,-7.75) {EC2/Ollama\\deployment prep};
+\node[medoraBlock] (p81) at (0.95,-9.35) {8.1\\Backend\\API + DB};
+\node[medoraBlock] (p82) at (5.25,-9.35) {8.2\\Frontend\\UI};
+\node[medoraWarn] (p9) at (9.55,-9.35) {9\\Full-stack\\integration};
+
+\draw[medoraArrow] (p11) -- (p12);
+\draw[medoraArrow] (p12) -- (p21);
+\draw[medoraArrow] (p21) -- (p22);
+\draw[medoraArrow] (p22) -- (p23);
+\draw[medoraArrow] (p23) -- (p3);
+\draw[medoraArrow] (p3) -- (p5);
+\draw[medoraArrow] (p12) -- (p13);
+\draw[medoraArrow] (p13) -- (p4);
+\draw[medoraArrow] (p4) -- (p5);
+\draw[medoraArrow] (p5) -- (p6);
+\draw[medoraArrow] (p5) -- (p7);
+\draw[medoraDashed] (pm) -- (p4);
+\draw[medoraDashed] (pm.east) to[out=0,in=225] (p5.south west);
+\draw[medoraArrow] (p5) |- (p8);
+\draw[medoraArrow] (p6) |- (p8);
+\draw[medoraDashed] (dep) -- (p8);
+\draw[medoraArrow] (p7) |- (p81);
+\draw[medoraArrow] (p81) -- (p82);
+\draw[medoraArrow] (p82) -- (p9);
+\draw[medoraDashed] (p5) |- (p9);
+\draw[medoraDashed] (dep) -- (p9);
+\end{tikzpicture}}
+\caption{Implemented Medora phase flow, separated into data preparation, runtime agents, current web evidence, benchmarking, application infrastructure, integration, and deployment preparation.}
+\label{fig:phase_pipeline}
+\end{figure}
+
+\begin{longtable}{p{0.25\textwidth} p{0.38\textwidth} p{0.27\textwidth}}
+\caption{Repository implementation map.}
+\label{tab:repo_implementation_map}\\
+\toprule
+\textbf{Area} & \textbf{Main files} & \textbf{Role}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Area} & \textbf{Main files} & \textbf{Role}\\
+\midrule
+\endhead
+PDF and text processing & \texttt{data\_processing/tmt\_parser.py}, \texttt{build\_pua\_mapping.py}, \texttt{apply\_pua\_corrections.py} & Extract clean textbook sections and correct PUA corruption.\\
+Chunking & \texttt{data\_processing/chunker.py} & Produce structure-aware chunks and fixed-size baseline chunks.\\
+Symptom structuring & \texttt{data\_processing/symptom\_structurer.py} & Convert Chapter 2 symptom chunks into structured intake objects.\\
+Embedding and storage & \texttt{embeddings/embed\_chunks.py}, \texttt{build\_vector\_store.py} & Generate vectors and build persistent ChromaDB collection.\\
+Evaluation and RAG & \texttt{evaluation/retrieval\_validation.py}, \texttt{evaluation/llm\_judge.py}, \texttt{rag/reranker.py} & Validate retrieval and reranking quality.\\
+Agents & \texttt{agents/intake\_agent.py}, \texttt{agents/triage\_agent.py} & Conduct intake and provisional triage diagnosis.\\
+Continuity and feedback & \texttt{agents/patient\_memory.py}, \texttt{agents/feedback\_store.py} & Store patient profiles and doctor-reviewed cases.\\
+Web evidence & \texttt{agents/web\_evidence/}, \texttt{agents/web\_search.py} & Retrieve current trusted medical evidence, remove identifiers, rank sources, run council review, and support web-search benchmarking.\\
+Benchmarking & \texttt{evaluation/pipeline\_benchmark.py}, \texttt{evaluation/benchmark.py}, \texttt{evaluation/web\_search\_benchmark.py}, \texttt{evaluation/web\_evidence\_validation.py} & Test RAG, web search, local models, API models, matching quality, latency, and web-evidence approaches.\\
+Deployment preparation & \texttt{docs/deployment\_guide.md}, \texttt{evaluation/benchmark\_config.py} & Record EC2/Ollama setup, model profiles, CLI flags, and open-source deployment path.\\
+Backend application & \texttt{backend/app/}, \texttt{backend/alembic/} & Provide authenticated FastAPI routes, PostgreSQL persistence, SQLAlchemy models, Alembic migrations, role guards, reports, feedback, and traceability tables.\\
+Frontend application & \texttt{frontend/src/} & Provide React and TypeScript role-specific interfaces for patients, doctors, and admins.\\
+Full-stack integration & \texttt{backend/app/services/session\_manager.py}, \texttt{backend/app/routers/triage.py}, \texttt{backend/app/routers/doctor.py} & Connect web requests to Intake Agent, Triage Agent, Patient Memory, FeedbackStore, shared model cache, and doctor-only diagnosis visibility.\\
+\bottomrule
+\end{longtable}
+
+\section{Deployment Privacy and Runtime Model Boundary}
+
+Medora is designed with a hospital-server deployment goal. The patient-facing inference path should use open-source models hosted inside the hospital environment. This applies to the conversational LLM, embedding model, reranker, vector store, patient memory, and feedback database. In that deployment model, patient complaints, follow-up answers, history, retrieved evidence, provisional diagnoses, and doctor feedback remain within hospital-controlled infrastructure.
+
+Commercial hosted models were used for controlled development work, not as the intended hospital runtime path. GPT-4o was used for preprocessing, comparison, and evaluation tasks: correcting the last unresolved PUA extraction cases, comparing symptom structuring quality against a local Llama 3.1 8B run, creating static structured symptom objects from the textbook, scoring retrieved passages during LLM-as-judge reranker comparison, and supporting development-time agent tests. GPT-5.4-family models were used in benchmark and judge roles where the Phase 8 documentation records them. The current agent scripts use ChatOpenAI-compatible interfaces in several places, which made development testing straightforward. For hospital deployment, those runtime adapters must point to a validated hospital-hosted open-source or OpenAI-compatible local model instead of a commercial hosted model. The repository configuration records \texttt{LLM\_MODEL = "openbiollm-8b"} as the target direction for this open-source runtime layer, while the deployment guide adds Ollama models such as Llama, Gemma, Phi, and MedLlama for benchmarking.
+
+\begin{table}[htbp]
+\centering
+\caption{Model boundary between offline development and hospital inference.}
+\label{tab:model_boundary}
+\begin{tabular}{p{0.26\textwidth} p{0.34\textwidth} p{0.30\textwidth}}
+\toprule
+\textbf{Model use} & \textbf{Where it happens} & \textbf{Privacy implication}\\
+\midrule
+GPT-4o PUA correction & Offline preprocessing before deployment & No patient conversations involved.\\
+GPT-4o symptom structuring & Offline comparison with Llama 3.1 8B and creation of static Chapter 2 symptom objects & Textbook-derived artifact can be reviewed before deployment.\\
+GPT-4o LLM-as-judge & Offline reranker comparison & Scores passages, not patient sessions.\\
+GPT-4o agent testing & Development-time functional testing & Not the intended hospital runtime path.\\
+GPT-5.4-family benchmarking & End-to-end benchmark and judge comparisons & Used to measure an API-model ceiling, not to define hospital runtime privacy.\\
+Local LLM web evidence modes & Optional hospital-controlled synthesis or council assistance & Must run through Ollama, Hugging Face, or another local adapter inside the hospital boundary.\\
+Open-source LLM inference & Hospital server runtime & Patient data stays within the hospital boundary.\\
+Embedding and reranking models & Hospital server runtime & Retrieval can run locally over the textbook corpus.\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Phase 1.1: Smart PDF Extraction and PUA Correction}
+
+The first implementation phase looked simple at the start: extract the textbook into text. It became one of the most important phases because the raw PDF did not behave like a normal text file. The source textbook stores some glyphs using Private Use Area code points. When a standard extractor reads those glyphs, the visible character can become a meaningless code point. In a medical textbook, that is not a cosmetic issue. A corrupted character inside a drug name, unit, symptom, or disease can reduce retrieval quality or change clinical meaning.
+
+\subsection{Approaches Tried}
+
+We first considered ordinary PDF text extraction. That approach was rejected because it returned garbled characters and did not preserve the two-column reading order reliably. We then moved to span-level extraction with PyMuPDF because it exposes the font name, font size, text span, and coordinates. Those attributes gave us enough information to correct the text and reconstruct the document structure.
+
+\begin{longtable}{p{0.22\textwidth} p{0.30\textwidth} p{0.38\textwidth}}
+\caption{PDF extraction alternatives and outcomes.}
+\label{tab:pdf_extraction_alternatives}\\
+\toprule
+\textbf{Approach} & \textbf{What we expected} & \textbf{What happened and what we did}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Approach} & \textbf{What we expected} & \textbf{What happened and what we did}\\
+\midrule
+\endhead
+Plain text extraction & Fast conversion from PDF pages to text. & Text contained PUA corruption and layout order problems, so it was not safe for retrieval.\\
+Global PUA replacement & One corrupted code point maps to one real character. & Failed because the same PUA code can represent different visible characters in different embedded fonts.\\
+LLM-only cleanup & Ask an LLM to rewrite corrupted text. & Rejected because it would be expensive, less deterministic, and risky for clinical text.\\
+Per-font deterministic mapping & Use font identity plus code point to recover visible characters. & Worked for most cases and became the main correction method.\\
+Small LLM assist & Use GPT-4o only for unresolved edge cases. & Used for the final 27 entries in two calls, keeping cost very low and scope controlled.\\
+\bottomrule
+\end{longtable}
+
+\subsection{Final Extraction Pipeline}
+
+The final parser reads the document with PyMuPDF, analyzes text spans, applies per-font PUA correction, classifies spans using font size and font identity, repairs two-column reading order, and emits structured section records. Chapter boundaries come from the document table of contents, while section and subsection boundaries are detected using font features and parser state.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{0.96\textwidth}{!}{
+\begin{tikzpicture}[node distance=0.82cm]
+\node[medoraBlock] (pdf) {Raw PDF\\pages};
+\node[medoraBlock, right=of pdf] (spans) {PyMuPDF spans\\font, size, x/y};
+\node[medoraData, right=of spans] (pua) {Per-font PUA\\correction};
+\node[medoraData, right=of pua] (layout) {Column-aware\\reading order};
+\node[medoraData, right=of layout] (state) {Chapter and section\\state machine};
+\node[medoraStore, right=of state] (json) {Clean section\\JSON};
+\draw[medoraArrow] (pdf) -- (spans);
+\draw[medoraArrow] (spans) -- (pua);
+\draw[medoraArrow] (pua) -- (layout);
+\draw[medoraArrow] (layout) -- (state);
+\draw[medoraArrow] (state) -- (json);
+\end{tikzpicture}}
+\caption{PDF extraction and correction pipeline.}
+\label{fig:pdf_extraction_flow}
+\end{figure}
+
+The two-column handling was a practical detail that mattered. Many pages contain a left column and a right column. If blocks are sorted only by vertical position, lines from the two columns can be interleaved. The parser therefore compares each block's x-position with the page midpoint, reads the left column from top to bottom, then reads the right column from top to bottom. This preserves clinical sequence more reliably than the raw extraction order.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{0.86\textwidth}{!}{
+\begin{tikzpicture}
+\node[draw=medoragray, fill=medoralight, minimum width=4.6cm, minimum height=5.4cm] (page) {};
+\draw[medoragray, dashed] (0,-2.7) -- (0,2.7);
+\node[medoraData, text width=1.75cm, minimum height=0.55cm] at (-1.25,1.8) {L1};
+\node[medoraData, text width=1.75cm, minimum height=0.55cm] at (-1.25,0.7) {L2};
+\node[medoraData, text width=1.75cm, minimum height=0.55cm] at (-1.25,-0.5) {L3};
+\node[medoraWarn, text width=1.75cm, minimum height=0.55cm] at (1.25,1.5) {R1};
+\node[medoraWarn, text width=1.75cm, minimum height=0.55cm] at (1.25,0.2) {R2};
+\node[medoraWarn, text width=1.75cm, minimum height=0.55cm] at (1.25,-1.2) {R3};
+\node[align=center, font=\small] at (0,-3.25) {Reading order: L1, L2, L3, R1, R2, R3};
+\end{tikzpicture}}
+\caption{Column-aware reading order used for two-column textbook pages.}
+\label{fig:two_column_order}
+\end{figure}
+
+\subsection{Output Schema and Results}
+
+The parser emits records rather than plain text. This is important because later stages need chapter, section, subsection, and page metadata to build context prefixes and source labels.
+
+\begin{table}[htbp]
+\centering
+\caption{Section record schema produced by the parser.}
+\label{tab:section_schema}
+\begin{tabular}{p{0.27\textwidth} p{0.60\textwidth}}
+\toprule
+\textbf{Field} & \textbf{Meaning}\\
+\midrule
+\texttt{source} & Source textbook identifier.\\
+\texttt{chapter}, \texttt{chapter\_title} & Numeric chapter and chapter title from the table of contents.\\
+\texttt{section}, \texttt{subsection} & Clinical section labels detected from font and parser state.\\
+\texttt{text} & Clean body text after PUA correction and layout reconstruction.\\
+\texttt{page\_range} & Page span covered by the extracted record.\\
+\texttt{word\_count} & Word count used later by chunking.\\
+\texttt{has\_essentials\_box} & Whether the record includes an Essentials of Diagnosis box.\\
+\texttt{essentials\_text} & Extracted Essentials text when present.\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Final PDF extraction results.}
+\label{tab:pdf_extraction_results}
+\begin{tabular}{p{0.55\textwidth} c}
+\toprule
+\textbf{Metric} & \textbf{Result}\\
+\midrule
+Section records & 7,942\\
+Extracted chapters & 43\\
+Clean characters & 8,655,430\\
+Remaining PUA characters after verification & 0\\
+Final unresolved PUA entries corrected with GPT-4o & 27\\
+GPT-4o calls for residual correction & 2\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The remaining limitations are explicit. The parser is tuned to the CMDT 2022 layout, not to arbitrary medical PDFs. Visual tables and mathematical formulas are not represented as richly as normal prose. The documentation also records blank pages 1861 and 1862 and notes that front matter was not converted into clinical section records. These limitations are acceptable because Medora's RAG system depends on clinical chapter text, not front matter or decorative layout. Some repository artifact names still use the historical prefix \texttt{tmt\_*}; this is an internal filename convention for the CMDT 2022 corpus, not a separate medical source.
+
+\section{Phase 1.2: Structure-Aware Chunking}
+
+After extraction, the system had clean section records. The next problem was embedding length and retrieval granularity. A section may be too long for direct embedding, but arbitrary word windows can split clinically meaningful units. We therefore implemented two approaches: a fixed-size baseline and the final structure-aware chunker.
+
+\subsection{Chunking Algorithm}
+
+The fixed baseline uses 200-word windows with 50-word overlap. It is easy to understand and useful for comparison, but it ignores chapters, sections, and headings. The structure-aware chunker instead starts from the section records and tries to preserve clinical boundaries while meeting a target range of 50 to 500 words, with a target near 200 words.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tikzpicture}[node distance=0.95cm]
+\node[medoraBlock] (raw) {7,942 raw\\sections};
+\node[medoraData, right=of raw] (drop) {Drop empty\\sections};
+\node[medoraData, right=of drop] (merge) {Merge short\\same-context sections};
+\node[medoraData, right=of merge] (split) {Split long\\sections};
+\node[medoraData, below=0.9cm of split] (clean) {Clean artifacts\\and remove Index};
+\node[medoraData, left=of clean] (post) {Post-merge\\short orphans};
+\node[medoraStore, left=of post] (final) {5,631 final\\chunks};
+\draw[medoraArrow] (raw) -- (drop);
+\draw[medoraArrow] (drop) -- (merge);
+\draw[medoraArrow] (merge) -- (split);
+\draw[medoraArrow] (split) -- (clean);
+\draw[medoraArrow] (clean) -- (post);
+\draw[medoraArrow] (post) -- (final);
+\end{tikzpicture}}
+\caption{Structure-aware chunking flow.}
+\label{fig:chunk_construction}
+\end{figure}
+
+\begin{longtable}{p{0.22\textwidth} p{0.38\textwidth} p{0.30\textwidth}}
+\caption{Chunking rules and why they were needed.}
+\label{tab:chunking_rules}\\
+\toprule
+\textbf{Rule} & \textbf{Purpose} & \textbf{Observed effect}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Rule} & \textbf{Purpose} & \textbf{Observed effect}\\
+\midrule
+\endhead
+Drop empty sections & Remove parser records with no clinical text. & 12 empty records dropped.\\
+Merge short sections & Avoid many tiny chunks that are weak for retrieval. & Section records reduced before chunk emission.\\
+Preserve Essentials boxes & Keep high-value diagnostic summaries visible as distinct content. & Essentials content remains retrievable.\\
+Split by paragraph & Prefer natural prose boundaries for long sections. & Most long text split without damaging sentences.\\
+Split by sentence & Handle long paragraphs without arbitrary word cuts. & Keeps clinical statements intact where possible.\\
+Force split by words & Last resort when paragraph and sentence splitting cannot satisfy limits. & Prevents extremely long chunks.\\
+Remove Index content & Avoid non-clinical alphabetic index entries in retrieval. & 187 Index chunks removed.\\
+Post-merge orphans & Reduce sub-50-word chunks when a safe neighbor exists. & 1,064 short chunks merged.\\
+\bottomrule
+\end{longtable}
+
+\subsection{Chunking Results}
+
+\begin{table}[htbp]
+\centering
+\caption{Structured chunking compared with the fixed-size baseline.}
+\label{tab:chunking_comparison}
+\begin{tabular}{p{0.34\textwidth} c c}
+\toprule
+\textbf{Metric} & \textbf{Structured chunks} & \textbf{Baseline chunks}\\
+\midrule
+Total chunks & 5,631 & 8,216\\
+Mean word count & 196.1 & about 200\\
+Median word count & 154.0 & about 200\\
+Minimum word count & 2 & under 200\\
+Maximum word count & 568 & 200\\
+Chunks under 50 words & 41 & Not applicable\\
+Chunks between 500 and 568 words & 78 & 0\\
+Uses overlap & No & 50 words\\
+Preserves section metadata & Yes & Only approximately\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\resizebox{0.92\textwidth}{!}{
+\begin{tikzpicture}[x=1cm,y=1cm]
+\node[font=\small\bfseries, text=medoragray] at (2.0,4.45) {Total chunk count};
+\draw[->, medoragray] (0,0) -- (4.2,0);
+\draw[->, medoragray] (0,0) -- (0,4.0);
+\draw[fill=medorablue!30, draw=medorablue] (0.8,0) rectangle (1.55,2.75);
+\draw[fill=medoragreen!30, draw=medoragreen] (2.35,0) rectangle (3.10,4.00);
+\node[font=\scriptsize] at (1.18,2.95) {5,631};
+\node[font=\scriptsize] at (2.72,4.20) {8,216};
+\node[font=\scriptsize, align=center] at (1.18,-0.38) {Structured};
+\node[font=\scriptsize, align=center] at (2.72,-0.38) {Baseline};
+\node[font=\scriptsize, rotate=90] at (-0.45,2.0) {count};
+
+\begin{scope}[xshift=5.6cm]
+\node[font=\small\bfseries, text=medoragray] at (2.0,4.45) {Structured edge cases};
+\draw[->, medoragray] (0,0) -- (4.2,0);
+\draw[->, medoragray] (0,0) -- (0,4.0);
+\draw[fill=medoraamber!35, draw=medoraamber] (0.8,0) rectangle (1.55,2.10);
+\draw[fill=medoraamber!55, draw=medoraamber] (2.35,0) rectangle (3.10,4.00);
+\node[font=\scriptsize] at (1.18,2.30) {41};
+\node[font=\scriptsize] at (2.72,4.20) {78};
+\node[font=\scriptsize, align=center] at (1.18,-0.38) {Under\\50 words};
+\node[font=\scriptsize, align=center] at (2.72,-0.38) {Over\\500 words};
+\node[font=\scriptsize, rotate=90] at (-0.45,2.0) {count};
+\end{scope}
+
+\node[font=\small, align=center] at (4.75,-1.02) {Structured chunking produced fewer chunks than the overlapping baseline, while only a small number of chunks fell outside the target range.};
+\end{tikzpicture}}
+\caption{Chunking output comparison using measured counts from Phase 1.2.}
+\label{fig:chunk_distribution_visual}
+\end{figure}
+
+The few chunks below 50 words were retained because they contained real clinical content that could not be safely merged. The chunks above 500 words were only slightly over the configured maximum, ranging from 500 to 568 words, and were kept when preserving content was better than forcing an unnatural split. This is a good example of a practical engineering tradeoff: the configuration is a target, but clinical coherence has priority.
+
+\section{Phase 1.3: Symptom Structuring}
+
+The Intake Agent does not need the whole textbook as free text. It needs structured clinical objects for common presenting symptoms. We therefore structured the Chapter 2 common symptoms into JSON objects that the Intake Agent can use directly. This phase was deliberately limited to 11 common symptoms because those are the symptoms handled by the intake workflow. Structuring the entire textbook would have required 200 to 300 condition objects, higher cost, and a more complex maintenance problem, while the RAG pipeline already covers the rest of the textbook for triage.
+
+\subsection{Schema Evolution}
+
+The first schema had 10 fields. After reviewing the extracted sections, we expanded it to 15 fields because the original schema missed clinically useful sections such as ``When to Admit'', ``When to Refer'', ``Treatment'', etiology, and epidemiology. The final schema is shown in Figure \ref{fig:symptom_schema}.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tikzpicture}[node distance=0.55cm]
+\node[medoraBlock, text width=3.2cm] (symptom) {Symptom object};
+\node[medoraData, below left=0.8cm and 2.8cm of symptom, text width=3.5cm] (history) {History fields\\questions, key history, epidemiology};
+\node[medoraData, below=0.8cm of symptom, text width=3.5cm] (risk) {Risk fields\\red flags, urgency, admit, refer};
+\node[medoraData, below right=0.8cm and 2.8cm of symptom, text width=3.5cm] (clinical) {Clinical fields\\differential, exam, workup, treatment, etiology};
+\draw[medoraArrow] (symptom) -- (history);
+\draw[medoraArrow] (symptom) -- (risk);
+\draw[medoraArrow] (symptom) -- (clinical);
+\end{tikzpicture}}
+\caption{Fifteen-field symptom object grouped by clinical purpose.}
+\label{fig:symptom_schema}
+\end{figure}
+
+\begin{longtable}{p{0.22\textwidth} c c c c c c c c}
+\caption{Structured symptom output counts.}
+\label{tab:symptom_counts}\\
+\toprule
+\textbf{Symptom} & \textbf{Q} & \textbf{RF} & \textbf{DDx} & \textbf{Urg} & \textbf{Admit} & \textbf{Refer} & \textbf{Treat} & \textbf{Etiol}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Symptom} & \textbf{Q} & \textbf{RF} & \textbf{DDx} & \textbf{Urg} & \textbf{Admit} & \textbf{Refer} & \textbf{Treat} & \textbf{Etiol}\\
+\midrule
+\endhead
+Cough & 5 & 4 & 6 & 3 & 3 & 3 & 4 & 4\\
+Dyspnea & 5 & 4 & 5 & 3 & 3 & 3 & 4 & 4\\
+Hemoptysis & 3 & 2 & 4 & 2 & 1 & 3 & 4 & 7\\
+Chest Pain & 5 & 4 & 5 & 3 & 3 & 2 & 3 & 3\\
+Palpitations & 6 & 3 & 4 & 2 & 1 & 2 & 3 & 4\\
+Lower Extremity Edema & 6 & 2 & 6 & 2 & 2 & 3 & 4 & 4\\
+Fever & 5 & 3 & 3 & 2 & 3 & 2 & 3 & 4\\
+Involuntary Weight Loss & 5 & 2 & 8 & 3 & 3 & 1 & 7 & 8\\
+Fatigue & 8 & 5 & 6 & 2 & 1 & 3 & 5 & 4\\
+Acute Headache & 5 & 5 & 5 & 3 & 4 & 1 & 3 & 6\\
+Dysuria & 6 & 4 & 5 & 2 & 7 & 3 & 5 & 4\\
+\bottomrule
+\end{longtable}
+
+The abbreviations in Table \ref{tab:symptom_counts} are Q for essential questions, RF for red flags, DDx for differential diagnoses, Urg for urgency rules, Treat for treatment overview, and Etiol for etiology. The table is useful because it shows that the final data is not a single canned prompt response. Different symptoms have different clinical depth, and the extracted objects reflect that variation.
+
+\subsection{GPT-4o and Llama 3.1 Comparison}
+
+We compared GPT-4o and Llama 3.1 8B on Chest Pain, Cough, and Dyspnea. This was a development-time comparison, not a runtime inference design. Llama produced usable JSON, but the clinical content was thinner. It omitted important differentials in some cases and produced at least one reasoning error around a D-dimer rule for chest pain. GPT-4o was more complete and more consistent for this offline structuring task, so we used it to create the final symptom objects that the deployed system can load locally.
+
+\begin{table}[htbp]
+\centering
+\caption{Model comparison for symptom structuring.}
+\label{tab:symptom_model_comparison}
+\begin{tabular}{p{0.38\textwidth} c c}
+\toprule
+\textbf{Average over three symptoms} & \textbf{GPT-4o} & \textbf{Llama 3.1 8B}\\
+\midrule
+Essential questions & 5.0 & 3.0\\
+Red flags & 4.0 & 2.3\\
+Differential diagnoses & 5.3 & 2.7\\
+Urgency rules & 3.0 & 1.7\\
+Observed clinical reasoning errors & 0 & At least 1\\
+Formatting consistency & High & Low\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The final output is still treated as a research artifact. GPT-4o improved offline symptom structuring quality in the comparison, but it does not replace clinician review and it is not part of the intended hospital inference path. The structured symptom objects are static textbook-derived artifacts that can be inspected before deployment. During runtime, the Intake Agent reads those artifacts locally and the conversational model should be an open-source model hosted on the hospital server.
+
+\section{Phase 2.1: Embedding Pipeline}
+
+The embedding pipeline converts the 5,631 structured chunks into vectors. The selected model is \texttt{sentence-transformers/embeddinggemma-300m-medical}. We selected it after comparing medical relevance, context length, vector size, hardware feasibility, and integration complexity.
+
+\begin{longtable}{p{0.20\textwidth} p{0.16\textwidth} p{0.14\textwidth} p{0.40\textwidth}}
+\caption{Embedding model alternatives.}
+\label{tab:embedding_model_alternatives}\\
+\toprule
+\textbf{Model} & \textbf{Size and dims} & \textbf{Token limit} & \textbf{Decision reason}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Model} & \textbf{Size and dims} & \textbf{Token limit} & \textbf{Decision reason}\\
+\midrule
+\endhead
+\texttt{BAAI/bge-m3} & 570M, 1024 & 8192 & Strong general multilingual model, but hybrid sparse and ColBERT features were not needed and integration was heavier.\\
+\texttt{embeddinggemma-300m-medical} & 308M, 768 & 2048 & Selected because it is medical, long enough for our chunks, and practical on local hardware.\\
+MedTE & 109M, 768 & 512 & Attractive medical benchmark results, but 512 tokens risked truncating context-prefixed chunks.\\
+MedCPT embedding & 220M, 768 & 512 & Useful biomedical retriever, but the token limit and training distribution were less suitable for textbook chunks.\\
+BMRetriever-7B & 7B, 4096 & 512 & Too large for the available local workflow and required custom inference complexity.\\
+PubMedBERT, BioBERT, ClinicalBERT & about 110M & 512 & Older encoder families without the same sentence-transformer retrieval objective for our use case.\\
+\bottomrule
+\end{longtable}
+
+Each chunk is embedded with a context prefix:
+
+\begin{center}
+\texttt{Chapter: \{chapter\} | Section: \{section\} | Subsection: \{subsection\} | \{text\}}
+\end{center}
+
+The prefix gives the embedding model clinical context without changing the text returned to the user. The stored passage remains clean, while the vector carries metadata-aware meaning. We considered LLM-generated contextual prefixes, but that would require 5,631 additional API calls and would make the preprocessing pipeline less reproducible.
+
+\begin{table}[htbp]
+\centering
+\caption{Embedding run statistics.}
+\label{tab:embedding_run_stats}
+\begin{tabular}{p{0.50\textwidth} c}
+\toprule
+\textbf{Metric} & \textbf{Result}\\
+\midrule
+Chunks embedded & 5,631\\
+Batch size & 64\\
+Number of batches & 88\\
+Failed batches & 0\\
+Failed chunks & 0\\
+Embedding dimension & 768\\
+Output matrix shape & $(5631, 768)$\\
+Compressed output size & about 15MB\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+We did not embed the structured symptom objects because there are only 11 of them and the Intake Agent can retrieve them by symptom name. Vector search would add unnecessary complexity to a small lookup problem.
+
+\section{Phase 2.2: ChromaDB Vector Store}
+
+The vector store is built from the chunk JSON and the embedding matrix. We selected ChromaDB because it provides local persistence, document storage, metadata filters, and a simple query API. This matches the prototype's need for reproducibility and avoids depending on an external paid service.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tikzpicture}[node distance=1.0cm]
+\node[medoraData] (chunks) {Chunk JSON\\text and metadata};
+\node[medoraData, below=0.85cm of chunks] (emb) {Embedding NPZ\\5631 x 768};
+\node[medoraBlock, right=1.25cm of chunks, yshift=-0.42cm, text width=3.0cm] (builder) {Vector-store builder\\alignment check\\duplicate ID handling};
+\node[medoraStore, right=1.25cm of builder, text width=2.8cm] (chroma) {ChromaDB\\\texttt{tmt\_chunks}};
+\node[medoraBlock, right=1.25cm of chroma, text width=3.0cm] (query) {Query API\\cosine search\\metadata filters};
+\draw[medoraArrow] (chunks) -- (builder);
+\draw[medoraArrow] (emb) -- (builder);
+\draw[medoraArrow] (builder) -- (chroma);
+\draw[medoraArrow] (chroma) -- (query);
+\end{tikzpicture}}
+\caption{Embedding and vector-store architecture.}
+\label{fig:vector_store}
+\end{figure}
+
+\begin{longtable}{p{0.22\textwidth} p{0.36\textwidth} p{0.32\textwidth}}
+\caption{Vector store alternatives.}
+\label{tab:vector_store_alternatives}\\
+\toprule
+\textbf{Alternative} & \textbf{Strength} & \textbf{Reason not selected}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Alternative} & \textbf{Strength} & \textbf{Reason not selected}\\
+\midrule
+\endhead
+Numpy cosine search & Simple and transparent for small experiments. & No document persistence, metadata filtering, or query abstraction.\\
+FAISS & Strong vector indexing library. & Mostly vector-only, with extra work needed for metadata and document persistence.\\
+Pinecone & Managed production vector database. & Requires external service, internet access, API key, and cost.\\
+Weaviate, Qdrant, Milvus & Production-capable vector databases. & Server or Docker setup was heavier than needed for the local prototype.\\
+ChromaDB & Local, persistent, metadata-aware, document-aware. & Selected because it best matched the project scale and reproducibility need.\\
+\bottomrule
+\end{longtable}
+
+We used one collection rather than one collection per chapter. A single collection makes broad retrieval easier, and chapter filters can still be applied through metadata. We also considered a separate Chapter 2 collection for symptoms, but the Intake Agent already uses structured symptom JSON directly, so a second collection would duplicate responsibility.
+
+During vector-store construction, we found four duplicate chunk IDs inherited from chunking. The ingestion script suffixes duplicates so ChromaDB receives unique IDs. This is a pragmatic workaround, not a perfect fix. The better future fix is to enforce uniqueness at chunk creation time.
+
+\begin{table}[htbp]
+\centering
+\caption{Sample retrieval checks after vector-store construction.}
+\label{tab:example_vector_queries}
+\begin{tabular}{p{0.30\textwidth} p{0.45\textwidth} p{0.15\textwidth}}
+\toprule
+\textbf{Query} & \textbf{Top relevant area} & \textbf{Distance}\\
+\midrule
+chest pain with shortness of breath & Chest Pain, When to Admit & 0.4025\\
+diabetes management insulin & Diabetes Mellitus, Patient Education & 0.4772\\
+fever immunocompromised & Infectious Diseases, Immunocompromised Patient, When to Admit & 0.3438\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Phase 2.3: Retrieval Validation}
+
+Retrieval validation was added before reranking so we could test the corpus, embeddings, and vector store as a complete retrieval pipeline. We used manually designed clinical queries rather than auto-generated questions. Manual queries were better for this phase because we could control the intended chapter or section, inspect ambiguous results, and explain failures clearly in the report.
+
+\begin{table}[htbp]
+\centering
+\caption{Retrieval validation design.}
+\label{tab:retrieval_validation_design}
+\begin{tabular}{p{0.30\textwidth} p{0.58\textwidth}}
+\toprule
+\textbf{Design item} & \textbf{Implementation}\\
+\midrule
+Query categories & Symptom presentations, condition-specific queries, and emergency scenarios.\\
+Core metrics & Hit@1, Hit@3, Hit@5, and Mean Reciprocal Rank.\\
+Filter metric & Metadata filter pass rate for chapter-scoped retrieval.\\
+Validation goal & Confirm that the expected evidence appears in the top context window used by the Triage Agent.\\
+Reason for manual labels & Ground truth was inspectable and clinically discussable.\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Retrieval validation results.}
+\label{tab:retrieval_results}
+\begin{tabular}{p{0.38\textwidth} c c}
+\toprule
+\textbf{Metric} & \textbf{Chapter-level} & \textbf{Section-level}\\
+\midrule
+Hit@1 & 90.0\% & 81.8\%\\
+Hit@3 & 100.0\% & 100.0\%\\
+Hit@5 & 100.0\% & 100.0\%\\
+MRR & 0.9500 & 0.9091\\
+Metadata filter pass rate & 100.0\% & Not applicable\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The two chapter-level rank-2 results were clinically understandable. A query about sharp chest pain radiating to the left arm returned Heart Disease first and Common Symptoms second. A query about heart racing and fluttering returned Heart Disease first and Palpitations second. In both cases, the rank-1 chapter was clinically relevant, which is why the later reranker evaluation added multi-label and content-level scoring.
+
+\begin{table}[htbp]
+\centering
+\caption{Retrieval k-sensitivity conclusion.}
+\label{tab:k_sensitivity}
+\begin{tabular}{p{0.22\textwidth} p{0.28\textwidth} p{0.40\textwidth}}
+\toprule
+\textbf{k value} & \textbf{Observed recall} & \textbf{Design decision}\\
+\midrule
+3 & Saturated validation recall & Use when sending chunks directly to the LLM.\\
+5 & No meaningful gain over k=3 & Not selected as the default.\\
+10 & Useful candidate pool for reranking & Retrieve 10, rerank, then return 3.\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Phase 3: Cross-Encoder Reranking}
+
+The bi-encoder retrieves candidates efficiently, but it scores the query and passage separately. A cross-encoder reranker reads the query and candidate passage together, so it can judge passage relevance more precisely. We added reranking after the retrieval baseline was already strong because the goal was not only to find the right chapter, but to improve the exact passage given to the Triage Agent.
+
+\begin{longtable}{p{0.22\textwidth} p{0.34\textwidth} p{0.34\textwidth}}
+\caption{Reranker alternatives.}
+\label{tab:reranker_alternatives}\\
+\toprule
+\textbf{Model} & \textbf{Why it was considered} & \textbf{Decision}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Model} & \textbf{Why it was considered} & \textbf{Decision}\\
+\midrule
+\endhead
+\texttt{mixedbread-ai/mxbai-colbert-large-v1} & Initially attractive because ColBERT-style retrieval is strong. & Rejected because it was the wrong architecture for simple CrossEncoder reranking in this pipeline.\\
+\texttt{cross-encoder/ms-marco-MiniLM-L-12-v2} & Small and easy to run. & Rejected because it is trained for general web relevance, not medical passages.\\
+\texttt{BAAI/bge-reranker-v2-m3} & Broad multilingual reranker with strong general semantic matching. & Selected primary reranker.\\
+\texttt{ncbi/MedCPT-Cross-Encoder} & Medical-domain cross-encoder. & Kept as comparison model, but not selected due a DKA treatment failure.\\
+\texttt{mixedbread-ai/mxbai-rerank-large-v2} & Strong reranker candidate. & Rejected because of API compatibility uncertainty in the local workflow.\\
+\texttt{jinaai/jina-reranker-v3} & Modern reranker candidate. & Rejected because of newness and uncertainty compared with BGE and MedCPT.\\
+\bottomrule
+\end{longtable}
+
+\begin{figure}[htbp]
+\centering
+\resizebox{0.88\textwidth}{!}{
+\begin{tikzpicture}[x=1cm,y=0.055cm]
+\draw[->, medoragray] (0,0) -- (9.4,0);
+\draw[->, medoragray] (0,0) -- (0,110);
+\node[font=\small, rotate=90] at (-0.62,55) {percent scale};
+\node[font=\small] at (4.7,-11) {evaluation view};
+\draw[fill=medorablue!30, draw=medorablue] (0.65,0) rectangle (1.15,90);
+\draw[fill=medoragreen!35, draw=medoragreen] (1.20,0) rectangle (1.70,70);
+\draw[fill=medoraamber!35, draw=medoraamber] (1.75,0) rectangle (2.25,75);
+\node[font=\scriptsize] at (0.90,95) {90};
+\node[font=\scriptsize] at (1.45,75) {70};
+\node[font=\scriptsize] at (2.00,80) {75};
+\node[font=\scriptsize, align=center] at (1.45,-5) {Strict\\Hit@1};
+\draw[fill=medorablue!30, draw=medorablue] (3.45,0) rectangle (3.95,100);
+\draw[fill=medoragreen!35, draw=medoragreen] (4.00,0) rectangle (4.50,100);
+\draw[fill=medoraamber!35, draw=medoraamber] (4.55,0) rectangle (5.05,95);
+\node[font=\scriptsize] at (3.70,105) {100};
+\node[font=\scriptsize] at (4.25,105) {100};
+\node[font=\scriptsize] at (4.80,100) {95};
+\node[font=\scriptsize, align=center] at (4.25,-5) {Multilabel\\Hit@1};
+\draw[fill=medorablue!30, draw=medorablue] (6.25,0) rectangle (6.75,81);
+\draw[fill=medoragreen!35, draw=medoragreen] (6.80,0) rectangle (7.30,87);
+\draw[fill=medoraamber!35, draw=medoraamber] (7.35,0) rectangle (7.85,86);
+\node[font=\scriptsize] at (6.50,86) {4.05};
+\node[font=\scriptsize] at (7.05,92) {4.35};
+\node[font=\scriptsize] at (7.60,91) {4.30};
+\node[font=\scriptsize, align=center] at (7.05,-5) {Judge score\\shown as score x20};
+\node[font=\scriptsize, fill=medorablue!15, draw=medorablue] at (8.8,88) {Bi};
+\node[font=\scriptsize, fill=medoragreen!15, draw=medoragreen] at (8.8,76) {BGE};
+\node[font=\scriptsize, fill=medoraamber!20, draw=medoraamber] at (8.8,64) {MedCPT};
+\end{tikzpicture}}
+\caption{Reranker comparison with Hit@1 percentages and offline judge scores converted to the same 0 to 100 visual scale.}
+\label{fig:reranker_chart}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\caption{Reranker evaluation results.}
+\label{tab:reranker_results}
+\begin{tabular}{p{0.35\textwidth} c c c}
+\toprule
+\textbf{Metric} & \textbf{Bi-encoder} & \textbf{BGE} & \textbf{MedCPT}\\
+\midrule
+Strict Chapter Hit@1 & 90.0\% & 70.0\% & 75.0\%\\
+Strict Chapter Hit@3 & 100.0\% & 100.0\% & 95.0\%\\
+Strict MRR & 0.950 & 0.842 & 0.842\\
+Multilabel Hit@1 & 100.0\% & 100.0\% & 95.0\%\\
+Multilabel Hit@3 & 100.0\% & 100.0\% & 100.0\%\\
+Multilabel MRR & 1.000 & 1.000 & 0.975\\
+LLM judge average score & 4.05 & \textbf{4.35} & 4.30\\
+Worst score observed & 2 & 3 & 2\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The GPT-4o judge was used only for offline comparison between retrieval configurations. Several per-query findings explain the final decision. For atrial fibrillation and rheumatoid arthritis treatment, BGE promoted more useful treatment passages than the bi-encoder. For DKA, MedCPT returned biochemical detail instead of a treatment protocol, which made it less attractive despite its medical domain. For dysuria, BGE promoted a BPH chunk and scored lower than the alternatives. For high fever with chills and night sweats, all methods were relatively weak. The result was not that reranking solved every query. The result was that BGE gave the best overall passage quality with no severe low-score cases.
+
+\section{Phase 4.1: Intake Agent}
+
+The Intake Agent collects patient information. It does not diagnose. It consumes the 11 structured symptom objects and uses LangGraph to manage a multi-turn conversation. We rejected a plain if/else script because the logic depends on multiple moving parts: detected symptoms, already answered questions, prefilled facts, vague answers, red flags, urgency, and routing. A single LLM prompt was also too opaque because it would hide state transitions and make testing harder.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tikzpicture}[node distance=0.72cm]
+\node[medoraBlock] (detect) {Detect\\symptom};
+\node[medoraBlock, right=of detect] (merge) {Merge\\questions};
+\node[medoraBlock, right=of merge] (prefill) {Prefill from\\initial message};
+\node[medoraBlock, below=0.78cm of prefill] (ask) {Ask\\question};
+\node[medoraBlock, left=of ask] (process) {Process\\answer};
+\node[medoraWarn, left=of process] (follow) {Targeted\\follow-up};
+\node[medoraRisk, below=0.78cm of process] (red) {Red flag\\check};
+\node[medoraRisk, left=of red] (escalate) {Emergency\\escalation};
+\node[medoraData, right=of red] (urgency) {Assess\\urgency};
+\node[medoraData, right=of urgency] (summary) {Generate\\handover};
+\draw[medoraArrow] (detect) -- (merge);
+\draw[medoraArrow] (merge) -- (prefill);
+\draw[medoraArrow] (prefill) -- (ask);
+\draw[medoraArrow] (ask) -- (process);
+\draw[medoraArrow] (process) -- (follow);
+\draw[medoraArrow] (follow) |- (ask);
+\draw[medoraArrow] (process) -- (red);
+\draw[medoraArrow] (red) -- (escalate);
+\draw[medoraArrow] (red) -- (urgency);
+\draw[medoraArrow] (urgency) -- (summary);
+\draw[medoraDashed] (process) |- ++(0,-1.1) -| (ask);
+\end{tikzpicture}}
+\caption{Intake Agent LangGraph flow.}
+\label{fig:intake_flow}
+\end{figure}
+
+\begin{longtable}{p{0.20\textwidth} p{0.34\textwidth} p{0.36\textwidth}}
+\caption{Intake Agent nodes.}
+\label{tab:intake_nodes}\\
+\toprule
+\textbf{Node} & \textbf{Role} & \textbf{Reason it exists}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Node} & \textbf{Role} & \textbf{Reason it exists}\\
+\midrule
+\endhead
+\texttt{detect\_symptom} & Identify common symptom names or mark uncommon complaint. & Determines whether the case can use structured Chapter 2 symptom objects.\\
+\texttt{merge\_questions} & Combine questions across one or more detected symptoms. & Supports multi-symptom complaints without duplicate questioning.\\
+\texttt{prefill} & Extract answers already present in the first patient message. & Avoids asking the patient to repeat facts.\\
+\texttt{ask\_question} & Ask the next patient-friendly intake question. & Keeps the conversation structured and clinically relevant.\\
+\texttt{process\_answer} & Store answer, detect vagueness, and update state. & Makes later decisions depend on actual conversation history.\\
+\texttt{ask\_followup} & Ask one targeted follow-up when an answer is incomplete. & Improves clinical depth without creating loops.\\
+\texttt{escalate} & Stop ordinary intake when urgent red flags appear. & Preserves safety when immediate care may be needed.\\
+\texttt{assess\_urgency} & Assign urgency using symptom rules and answers. & Produces a usable handover signal for the doctor.\\
+\texttt{generate\_summary} & Write the clinician handover note. & Converts conversation into structured clinical output.\\
+\bottomrule
+\end{longtable}
+
+\begin{table}[htbp]
+\centering
+\caption{Major Intake Agent fixes added after early testing.}
+\label{tab:intake_fixes}
+\begin{tabular}{p{0.26\textwidth} p{0.31\textwidth} p{0.33\textwidth}}
+\toprule
+\textbf{Fix} & \textbf{Problem before the fix} & \textbf{Effect after the fix}\\
+\midrule
+Context-aware questions & Questions could feel disconnected from the patient's wording. & Questions reference known context naturally.\\
+Vague-answer follow-up & Incomplete answers were accepted too easily. & One focused clarification is asked.\\
+Better red flag detection & Everyday language did not always match clinical red flag wording. & Prompts map patient phrasing to clinical risk concepts.\\
+Multi-symptom support & Early flow assumed one symptom. & Questions and red flags can combine across symptoms.\\
+Clinical depth probing & Some answers lacked severity, timing, or associated symptoms. & The agent probes missing clinically useful detail.\\
+Prefill from opening complaint & The patient was asked for facts already stated. & Repetition is reduced.\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The handover note has nine sections: presenting complaint, symptom history, red flags, urgency, specialty routing, relevant history, initial workup, exam findings, and clinician note. Recognized common symptoms route to Triage Mode A. Uncommon symptoms route to Triage Mode B with \texttt{uncommon\_symptom} and \texttt{raw\_complaint} set in the state. Emergency red flags can stop normal intake and produce an escalation summary.
+
+\section{Phase 5.1: Triage Agent}
+
+The Triage Agent is the diagnostic reasoning layer. Its output is a provisional diagnosis report for doctor review. The agent has two modes because common and uncommon presentations have different information shapes. Mode A starts from an Intake Agent handover. Mode B starts from a raw complaint and must ask its own questions.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tikzpicture}[node distance=0.75cm]
+\node[medoraBlock, text width=3.2cm] (a0) {Mode A\\common symptom};
+\node[medoraData, below=of a0, text width=3.2cm] (a1) {Parse intake into\\clinical picture};
+\node[medoraData, below=of a1, text width=3.2cm] (a2) {Retrieve 10\\rerank to 3};
+\node[medoraWarn, below=of a2, text width=3.2cm] (a3) {Criteria-based\\sufficiency and follow-up};
+\node[medoraData, below=of a3, text width=3.2cm] (a4) {Diagnosis report};
+\node[medoraBlock, right=2.0cm of a0, text width=3.2cm] (b0) {Mode B\\uncommon symptom};
+\node[medoraData, below=of b0, text width=3.2cm] (b1) {Broad retrieval\\from raw complaint};
+\node[medoraData, below=of b1, text width=3.2cm] (b2) {Generate 4 to 6\\questions};
+\node[medoraData, below=of b2, text width=3.2cm] (b3) {Targeted retrieval\\with answers};
+\node[medoraWarn, below=of b3, text width=3.2cm] (b4) {Optional Pass 3\\then hard stop};
+\node[medoraData, below=of b4, text width=3.2cm] (b5) {Diagnosis report};
+\draw[medoraArrow] (a0) -- (a1);
+\draw[medoraArrow] (a1) -- (a2);
+\draw[medoraArrow] (a2) -- (a3);
+\draw[medoraArrow] (a3) -- (a4);
+\draw[medoraArrow] (b0) -- (b1);
+\draw[medoraArrow] (b1) -- (b2);
+\draw[medoraArrow] (b2) -- (b3);
+\draw[medoraArrow] (b3) -- (b4);
+\draw[medoraArrow] (b4) -- (b5);
+\end{tikzpicture}}
+\caption{Triage Agent Mode A and Mode B workflows.}
+\label{fig:triage_modes}
+\end{figure}
+
+\subsection{Clinical Picture Parser}
+
+The clinical picture parser removes parts of the intake output that could bias diagnosis. It strips question wording, specialty routing, initial workup, key exam findings, and clinician-note text. The goal is to preserve patient-reported symptoms and history while forcing the Triage Agent to retrieve evidence and reason independently. This was added after we noticed that a diagnosis prompt can become biased if it reads routing suggestions as evidence.
+
+\subsection{Sufficiency Check Evolution}
+
+The first sufficiency check asked the LLM whether it had enough information to diagnose. That was too vague. The final design extracts diagnostic criteria from retrieved passages, then compares those criteria against the patient's report. Missing patient-reportable facts can become follow-up questions. Clinician-only gaps become recommended investigations rather than patient questions.
+
+\begin{table}[htbp]
+\centering
+\caption{Triage sufficiency design evolution.}
+\label{tab:sufficiency_evolution}
+\begin{tabular}{p{0.26\textwidth} p{0.30\textwidth} p{0.34\textwidth}}
+\toprule
+\textbf{Version} & \textbf{Issue} & \textbf{Final change}\\
+\midrule
+LLM yes/no sufficiency & Too subjective and not traceable to retrieved evidence. & Rejected.\\
+Criteria extraction & More grounded, but mixed patient-answerable and clinician-only gaps. & Kept and refined.\\
+Patient-reportable split & Prevents asking patients for lab or imaging results they do not have. & Final Mode A logic.\\
+Maximum three questions & Controls conversation length and avoids loops. & Final follow-up cap.\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Diagnosis Report}
+
+The diagnosis report has seven sections: Primary Diagnosis, Differential Diagnoses, Clinical Reasoning, Recommended Investigations, Management Considerations, Red Flags and Safety Netting, and Sources. The source section is important because it makes the provisional report inspectable. The physician can see which retrieved textbook passages were used.
+
+\begin{longtable}{p{0.22\textwidth} p{0.36\textwidth} p{0.32\textwidth}}
+\caption{Representative Triage Agent tests.}
+\label{tab:triage_tests}\\
+\toprule
+\textbf{Test case} & \textbf{Input summary} & \textbf{Observed output}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Test case} & \textbf{Input summary} & \textbf{Observed output}\\
+\midrule
+\endhead
+Mode A chest pain plus hemoptysis & Urgent case with chest tightness radiating to both arms, exertional worsening, hemoptysis, ex-smoker status, and previous stroke. & Primary diagnosis was Pulmonary Embolism with high confidence. Differentials included ACS, Aortic Dissection, and Pericarditis. Recommended investigations included CTPA, D-dimer, ECG, troponin, and chest X-ray.\\
+Mode B leg rash & One-week slowly spreading painful raised red nodular rash with fever and joint pain, no fungal history, contact, or injury. & Pass 2 suggested Erythema Nodosum with moderate confidence. Pass 3 used fever and joint pain as critical refiners and produced Erythema Nodosum with high confidence.\\
+\bottomrule
+\end{longtable}
+
+\begin{table}[htbp]
+\centering
+\caption{Estimated Triage Agent runtime model calls by mode.}
+\label{tab:triage_cost}
+\begin{tabular}{p{0.35\textwidth} c p{0.35\textwidth}}
+\toprule
+\textbf{Mode} & \textbf{Typical calls} & \textbf{Runtime observation}\\
+\midrule
+Mode A without follow-ups & 19 to 25 & Suitable for a locally hosted open-source LLM because all patient context remains inside the hospital server.\\
+Mode A with up to 3 follow-ups & 22 to 28 & Follow-ups increase model calls but improve missing history.\\
+Mode B with Pass 3 refinement & 27 to 35 & Heavier because it asks questions and performs multiple retrieval passes.\\
+Future tiered local approach & Lower total & Smaller local models could handle classification and formatting while a stronger local medical model handles diagnosis.\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Phase 5.2: Patient Memory}
+
+Patient Memory gives Medora continuity across sessions. Without memory, a returning patient must repeat stable facts every time. With unsafe memory, the system may silently trust old facts that changed. We chose a middle design: load known facts, show them as context, and briefly confirm them during intake.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{0.92\textwidth}{!}{
+\begin{tikzpicture}[node distance=1.0cm]
+\node[medoraBlock] (name) {Patient name};
+\node[medoraStore, right=of name] (profile) {Profile JSON};
+\node[medoraData, right=of profile] (context) {History context\\for intake and triage};
+\node[medoraBlock, below=0.9cm of context] (session) {Completed session\\summary and diagnosis};
+\node[medoraData, left=of session] (delta) {LLM extracts\\delta only};
+\node[medoraStore, left=of delta] (write) {Atomic profile\\update};
+\draw[medoraArrow] (name) -- (profile);
+\draw[medoraArrow] (profile) -- (context);
+\draw[medoraArrow] (context) -- (session);
+\draw[medoraArrow] (session) -- (delta);
+\draw[medoraArrow] (delta) -- (write);
+\draw[medoraDashed] (write) -- (profile);
+\end{tikzpicture}}
+\caption{Patient Memory schema and update lifecycle.}
+\label{fig:patient_memory}
+\end{figure}
+
+\begin{longtable}{p{0.24\textwidth} p{0.58\textwidth}}
+\caption{Patient Memory profile schema.}
+\label{tab:patient_memory_schema}\\
+\toprule
+\textbf{Profile area} & \textbf{Stored information}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Profile area} & \textbf{Stored information}\\
+\midrule
+\endhead
+Identity and demographics & Patient name plus demographic fields when available.\\
+Medical history & Chronic conditions, past diagnoses, surgical history, family history, medications, allergies, smoking, and substance use.\\
+Session history & Previous complaints, intake summaries, diagnosis reports, urgency, timestamps, and relevant notes.\\
+Context strings & Human-readable context prepared for Intake Agent and Triage Agent prompts.\\
+Storage metadata & File path under \texttt{data/patient\_profiles/}, normalized patient name, and update timestamp.\\
+\bottomrule
+\end{longtable}
+
+The update flow loads or creates a profile, builds an LLM input from the completed session, extracts only new or changed information, applies deterministic update rules, and writes the result atomically through a temporary file replacement. Demographics fill null values rather than overwriting known values. Lists append new facts. Smoking and substance-use objects can be replaced because they often change as a complete status.
+
+The limitations are not hidden. Name-only identity is not secure. JSON files do not scale to production concurrency. LLM extraction can miss or duplicate facts. The schema tolerates some string-versus-dictionary inconsistency because the prototype evolved quickly. A deployed version needs proper patient identity, database storage, audit logs, consent, and conflict resolution.
+
+\section{Phase 6: Privacy-Safe Web Evidence Council}
+
+The textbook RAG system answers the question: what does CMDT 2022 say about this clinical problem? Phase 6 answers a different question: is there current public medical evidence that should update or supplement the textbook result? This matters for guideline-sensitive topics such as antibiotics, vaccination schedules, drug safety warnings, infectious disease recommendations, and screening guidance.
+
+We did not implement this as unrestricted web browsing. The Web Evidence Council is a backend evidence tool for physician review. It does not diagnose the patient directly and it does not give patient-facing treatment instructions. Its job is to accept a clinical question, remove patient identifiers, search trusted public medical sources, rank and fetch sources, extract claims, run a council-style review, and return structured JSON with sources, limitations, conflicts, and a cautious summary.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tikzpicture}[node distance=0.72cm]
+\node[medoraBlock] (input) {Clinical\\question};
+\node[medoraRisk, right=of input] (privacy) {Privacy\\sanitizer};
+\node[medoraData, right=of privacy] (query) {Query\\builder};
+\node[medoraData, right=of query] (search) {SearXNG or\\static search};
+\node[medoraData, below=0.82cm of search] (fetch) {Page fetch\\and clean text};
+\node[medoraData, left=of fetch] (rank) {Source\\ranker};
+\node[medoraWarn, left=of rank] (claims) {Claim\\extraction};
+\node[medoraWarn, left=of claims] (council) {Council\\review};
+\node[medoraStore, below=0.82cm of claims] (json) {Final JSON\\for doctor review};
+\draw[medoraArrow] (input) -- (privacy);
+\draw[medoraArrow] (privacy) -- (query);
+\draw[medoraArrow] (query) -- (search);
+\draw[medoraArrow] (search) -- (fetch);
+\draw[medoraArrow] (fetch) -- (rank);
+\draw[medoraArrow] (rank) -- (claims);
+\draw[medoraArrow] (claims) -- (council);
+\draw[medoraArrow] (council) |- (json);
+\end{tikzpicture}}
+\caption{Phase 6 Web Evidence Council pipeline from de-identified clinical question to physician-reviewable JSON.}
+\label{fig:web_evidence_pipeline}
+\end{figure}
+
+\subsection{Input Contract and Privacy Boundary}
+
+The input schema is defined by \texttt{WebEvidenceRequest}. It separates the clinical question, optional patient context, and reason for web evidence. This separation is important because downstream code should never treat a raw patient narrative as a search query. The privacy sanitizer in \texttt{pii\_sanitizer.py} removes or avoids names, emails, phone numbers, addresses, dates, hospital IDs, national IDs, free-text notes, and unsupported context keys. Exact age is converted to an age range such as infant, child, adolescent, adult, middle-aged adult, or older adult.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{0.92\textwidth}{!}{
+\begin{tikzpicture}[node distance=0.9cm]
+\node[medoraRisk, text width=3.0cm] (raw) {Raw context\\name, phone, exact age, symptoms, comorbidities};
+\node[medoraBlock, right=of raw, text width=3.0cm] (rules) {Deterministic\\PII rules};
+\node[medoraData, right=of rules, text width=3.1cm] (safe) {Safe terms\\age range, sex, symptoms, red flags, comorbidities};
+\node[medoraWarn, below=0.85cm of safe, text width=3.1cm] (blocked) {Blocked from search\\free text, IDs, dates, contact data};
+\draw[medoraArrow] (raw) -- (rules);
+\draw[medoraArrow] (rules) -- (safe);
+\draw[medoraDashed] (rules) |- (blocked);
+\end{tikzpicture}}
+\caption{Privacy boundary for web evidence queries. Exact identifiers are removed before search or optional local LLM synthesis.}
+\label{fig:web_privacy_boundary}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\caption{Privacy sanitizer behavior.}
+\label{tab:web_privacy_sanitizer}
+\begin{tabular}{p{0.28\textwidth} p{0.31\textwidth} p{0.31\textwidth}}
+\toprule
+\textbf{Input type} & \textbf{Treatment} & \textbf{Reason}\\
+\midrule
+Name, phone, email, address, IDs, dates & Removed from query terms & These fields can identify a patient.\\
+Exact age & Converted to age range & Age category may matter clinically, but exact age is not needed for web search.\\
+Symptoms, red flags, comorbidities, medications & Kept after string sanitization & These are medical concepts needed for relevant evidence.\\
+Unsupported or free-text keys & Dropped & Prevents accidental leakage through arbitrary fields.\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Search, Fetching, and Source Governance}
+
+The query builder combines the sanitized clinical question with allowed medical context and trusted-source hints. If the question asks for guidelines, recommendations, latest updates, treatment, management, screening, vaccination, or warnings, the query builder adds guideline-oriented terms. The search layer supports \texttt{SearxNGSearchClient} for a self-hosted SearXNG instance and \texttt{StaticSearchClient} for deterministic tests and CI-style validation.
+
+Search results are not trusted automatically. The source ranker normalizes domains, assigns source tiers, rejects unsafe domains, classifies source type, scores recency, and adds relevance from query-term overlap. Tier 1 includes high-trust organizations such as WHO, CDC, NICE, NIH, PubMed, FDA, and EMA. Tier 2 includes medical journals and guideline organizations. Tier 3 includes hospital and academic clinical references. Rejected domains include consumer and forum-style sources such as Reddit, Quora, Wikipedia, Healthline, and WebMD.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tikzpicture}[node distance=0.8cm]
+\node[medoraData, text width=2.8cm] (tier1) {Tier 1\\government and major guideline sources};
+\node[medoraData, right=of tier1, text width=2.8cm] (tier2) {Tier 2\\journals and professional guidance};
+\node[medoraWarn, right=of tier2, text width=2.8cm] (tier3) {Tier 3\\hospital and academic references};
+\node[medoraRisk, right=of tier3, text width=2.8cm] (reject) {Rejected\\forums, wikis, consumer pages};
+\node[medoraBlock, below=0.85cm of tier2, text width=3.6cm] (score) {Reliability score\\tier + guideline/government bonus + recency + relevance};
+\draw[medoraArrow] (tier1) |- (score);
+\draw[medoraArrow] (tier2) -- (score);
+\draw[medoraArrow] (tier3) |- (score);
+\draw[medoraDashed] (reject) |- (score);
+\end{tikzpicture}}
+\caption{Source governance policy used before evidence synthesis. Rejected domains are demoted or excluded before council review.}
+\label{fig:source_governance}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\caption{Source-ranking signals.}
+\label{tab:source_ranking_signals}
+\begin{tabular}{p{0.28\textwidth} p{0.52\textwidth}}
+\toprule
+\textbf{Signal} & \textbf{Effect}\\
+\midrule
+Source tier & Gives higher base scores to government, guideline, and major biomedical sources.\\
+Guideline or government type & Adds bonuses when the source looks like a guideline or government/public-health reference.\\
+Recency & Adds a bonus to recent sources, penalizes missing dates, and penalizes sources older than 10 years.\\
+Rejected domain policy & Pushes low-trust or consumer/forum domains to a rejected score.\\
+Query relevance & Adds a small score from overlap between query terms and source title or snippet.\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Council Roles and Local LLM Boundary}
+
+The council is implemented in \texttt{council.py}. It combines deterministic checks with optional local LLM assistance. The important design choice is that local LLM calls are never the only safety mechanism. Each LLM JSON call has strict retry behavior and deterministic fallback. If no local LLM is configured, the pipeline still works in deterministic mode.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tikzpicture}[node distance=0.75cm]
+\node[medoraData] (source) {Source\\Validator};
+\node[medoraData, right=of source] (recency) {Recency\\Checker};
+\node[medoraWarn, right=of recency] (claim) {Medical Claim\\Extractor};
+\node[medoraWarn, right=of claim] (conflict) {Conflict\\Checker};
+\node[medoraRisk, below=0.85cm of conflict] (safety) {Safety\\Critic};
+\node[medoraBlock, left=of safety] (final) {Final\\Reviewer};
+\node[medoraStore, left=of final] (result) {Council\\decision};
+\draw[medoraArrow] (source) -- (recency);
+\draw[medoraArrow] (recency) -- (claim);
+\draw[medoraArrow] (claim) -- (conflict);
+\draw[medoraArrow] (conflict) -- (safety);
+\draw[medoraArrow] (safety) -- (final);
+\draw[medoraArrow] (final) -- (result);
+\end{tikzpicture}}
+\caption{Council roles used to validate source trust, recency, claims, conflicts, safety, and final usability.}
+\label{fig:web_council_roles}
+\end{figure}
+
+\begin{longtable}{p{0.24\textwidth} p{0.34\textwidth} p{0.32\textwidth}}
+\caption{Web Evidence Council roles.}
+\label{tab:web_council_roles}\\
+\toprule
+\textbf{Role} & \textbf{What it checks} & \textbf{Failure behavior}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Role} & \textbf{What it checks} & \textbf{Failure behavior}\\
+\midrule
+\endhead
+Source Validator & Whether at least one reliable Tier 1 or Tier 2 source is present. & Rejects evidence when reliable sources are absent.\\
+Recency Checker & Whether dates are recent, old, or missing. & Accepts with caution when source dates are old or unclear.\\
+Medical Claim Extractor & Extracts guideline, recommendation, diagnosis, warning, treatment, or management claims. & Falls back to deterministic sentence matching when LLM extraction fails.\\
+Conflict Checker & Looks for contradictory recommendation language. & Flags potential conflicts for physician review.\\
+Safety Critic & Detects direct medication instructions or unsafe patient-directed language. & Rejects unsafe direct treatment instructions.\\
+Final Reviewer & Combines privacy, source, recency, conflict, and safety decisions. & Rejects when privacy fails, reliable sources are absent, or any role rejects.\\
+\bottomrule
+\end{longtable}
+
+\subsection{Approaches Compared and Final Design}
+
+The implementation supports five approaches through \texttt{agents/web\_evidence/experiments/approaches.py}. We compared them because our initial assumption was that a hybrid local LLM council would probably produce the best evidence summary. The experiment showed a more practical result: deterministic-only is currently the strongest measured default for this codebase and local model setup.
+
+\begin{table}[htbp]
+\centering
+\caption{Web evidence reasoning approaches.}
+\label{tab:web_evidence_approaches}
+\begin{tabular}{p{0.28\textwidth} p{0.52\textwidth}}
+\toprule
+\textbf{Approach} & \textbf{Meaning}\\
+\midrule
+\texttt{deterministic\_only} & Search, ranking, claim extraction, council review, and synthesis are deterministic.\\
+\texttt{llm\_synthesis\_only} & Deterministic evidence pipeline with local LLM used only for the final summary.\\
+\texttt{llm\_claims\_and\_synthesis} & Local LLM extracts claims and writes the summary, while deterministic safety remains active.\\
+\texttt{full\_llm\_council} & Local LLM assists claim extraction, conflict checking, safety review, final review, and synthesis.\\
+\texttt{hybrid\_recommended} & Deterministic privacy, source validation, recency, and safety, with local LLM for claim extraction and synthesis.\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\resizebox{0.86\textwidth}{!}{
+\begin{tikzpicture}[x=1cm,y=0.045cm]
+\draw[->, medoragray] (0,0) -- (9.5,0);
+\draw[->, medoragray] (0,0) -- (0,110);
+\node[font=\small, rotate=90] at (-0.55,55) {overall score percentage};
+\draw[fill=medorablue!30, draw=medorablue] (0.7,0) rectangle (1.35,98.8);
+\draw[fill=medorablue!18, draw=medorablue] (2.0,0) rectangle (2.65,98.8);
+\draw[fill=medoraamber!35, draw=medoraamber] (3.3,0) rectangle (3.95,94.92);
+\draw[fill=medoraamber!55, draw=medoraamber] (4.6,0) rectangle (5.25,95.74);
+\draw[fill=medoragreen!35, draw=medoragreen] (5.9,0) rectangle (6.55,93.49);
+\node[font=\scriptsize] at (1.02,104) {98.8};
+\node[font=\scriptsize] at (2.32,104) {98.8};
+\node[font=\scriptsize] at (3.62,100) {94.9};
+\node[font=\scriptsize] at (4.92,101) {95.7};
+\node[font=\scriptsize] at (6.22,99) {93.5};
+\node[font=\scriptsize, align=center] at (1.02,-8) {det.\\only};
+\node[font=\scriptsize, align=center] at (2.32,-8) {LLM\\summary};
+\node[font=\scriptsize, align=center] at (3.62,-8) {claims +\\summary};
+\node[font=\scriptsize, align=center] at (4.92,-8) {full\\council};
+\node[font=\scriptsize, align=center] at (6.22,-8) {hybrid};
+\node[font=\small, align=left, text width=2.2cm] at (8.1,72) {Scores from the 5-query llama3.2 local experiment. All approaches kept 100\% valid JSON and 100\% privacy pass.};
+\end{tikzpicture}}
+\caption{Web evidence approach comparison. Deterministic-only is the current measured default, while hybrid remains the longer-term target after local model improvements.}
+\label{fig:web_evidence_approach_chart}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\caption{Local llama3.2 web evidence comparison results.}
+\label{tab:web_evidence_llama_results}
+\begin{tabular}{p{0.26\textwidth} c c c c}
+\toprule
+\textbf{Approach} & \textbf{Overall} & \textbf{Latency} & \textbf{Claims} & \textbf{Safety warnings}\\
+\midrule
+\texttt{deterministic\_only} & 0.9880 & 0.0009s & 8.0 & 0\\
+\texttt{llm\_synthesis\_only} & 0.9880 & 25.3132s & 8.0 & 0\\
+\texttt{full\_llm\_council} & 0.9574 & 73.9265s & 3.8 & 1\\
+\texttt{llm\_claims\_and\_synthesis} & 0.9492 & 73.8594s & 3.6 & 1\\
+\texttt{hybrid\_recommended} & 0.9349 & 49.5789s & 3.8 & 2\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All approaches in the local llama3.2 experiment returned valid JSON and passed privacy checks. They also returned an average of five sources, with 80\% Tier 1 and 20\% Tier 2 sources. The difference was mainly latency, claim count, final decision mix, and safety warnings. The 20-question mock evaluation produced 0.9880 overall for all approaches because the mock setup isolates deterministic mechanics rather than real local-model quality.
+
+\subsection{Failure Handling}
+
+The Web Evidence Council is designed to fail cautiously. If \texttt{SEARXNG\_BASE\_URL} is not configured, the smoke test returns a structured rejection with the limitation \texttt{missing\_searxng\_base\_url}. If page fetching fails, the source carries an error and the ranker can still reason over available metadata. If an optional local LLM fails to return JSON, the caller retries with a stricter prompt and then falls back to deterministic extraction or synthesis. If no reliable Tier 1 or Tier 2 source is found, the final reviewer rejects the evidence rather than inventing an answer.
+
+The lighter \texttt{agents/web\_search.py} path is separate from the council. It is a benchmark-oriented diagnostic fallback that searches whitelisted sources with SearXNG, fetches pages, and asks an LLM to produce a diagnosis JSON. It was useful for Phase 8 rare-case benchmarking, but it is not the same as the Web Evidence Council. The council is the safer source-review architecture for doctor-facing evidence validation.
+
+\section{Phase 7: Feedback Loop}
+
+The Feedback Loop is the infrastructure for learning from doctor review. It is not a training pipeline yet. It saves complete cases, lets a doctor confirm or reject the system diagnosis, and exports reviewed cases as JSONL for future supervised learning.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tikzpicture}[node distance=1.0cm]
+\node[medoraBlock] (diag) {Diagnosis report};
+\node[medoraData, right=of diag] (case) {Save complete\\case JSON};
+\node[medoraWarn, right=of case] (doctor) {Doctor review\\confirm or reject};
+\node[medoraData, right=of doctor] (analytics) {Analytics\\confirmation rate};
+\node[medoraStore, below=0.9cm of doctor] (jsonl) {Reviewed JSONL\\future training data};
+\draw[medoraArrow] (diag) -- (case);
+\draw[medoraArrow] (case) -- (doctor);
+\draw[medoraArrow] (doctor) -- (analytics);
+\draw[medoraArrow] (doctor) -- (jsonl);
+\end{tikzpicture}}
+\caption{Doctor feedback loop and future training data lifecycle.}
+\label{fig:feedback_loop}
+\end{figure}
+
+\begin{longtable}{p{0.24\textwidth} p{0.58\textwidth}}
+\caption{Feedback case schema.}
+\label{tab:feedback_schema}\\
+\toprule
+\textbf{Field group} & \textbf{Stored content}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Field group} & \textbf{Stored content}\\
+\midrule
+\endhead
+Case identity & \texttt{case\_id}, patient name, timestamp, and filename under \texttt{data/feedback/}.\\
+Patient presentation & Symptoms, urgency, intake summary, and clinical picture.\\
+System output & Diagnosis report, retrieved chunks, and system primary diagnosis.\\
+Doctor review & Review status, doctor decision, corrected diagnosis, notes, and review timestamp.\\
+Training export & Input clinical picture and retrieved chunks, expected output from confirmed or corrected diagnosis, and metadata.\\
+\bottomrule
+\end{longtable}
+
+The feedback documentation includes an example analytics summary with 47 total cases, 8 pending, 30 confirmed, 9 rejected, and an 80.85\% confirmation rate. This is an example of the analytics format, not a claim that Medora has been clinically validated on 47 real cases. The purpose is to show how the feedback store will support future monitoring once doctor-reviewed cases exist.
+
+For future fine-tuning, the phase documentation proposes collecting at least 50 to 100 reviewed cases, training a LoRA or QLoRA adapter on a model such as Llama 3.1 8B, evaluating held-out cases, and deploying the fine-tuned model beside the base system rather than replacing it blindly. The important point is that the feedback loop gives the project a realistic path from prototype to supervised improvement.
+
+\section{Deployment Preparation: EC2 and Ollama}
+
+Deployment preparation was added to test whether the privacy goal is technically realistic. Development on a local Mac is convenient for API-model experiments, but the intended hospital direction requires open-source models hosted on controlled infrastructure. We therefore prepared an AWS EC2 g5.2xlarge environment for local-model hosting and benchmarking through Ollama.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tikzpicture}[node distance=0.9cm]
+\node[medoraBlock, text width=3.0cm] (mac) {Development Mac\\API benchmarks\\pipeline iteration};
+\node[medoraData, right=of mac, text width=3.0cm] (repo) {Medora repo\\data files\\Chroma rebuild};
+\node[medoraWarn, right=of repo, text width=3.0cm] (ec2) {AWS EC2\\g5.2xlarge\\A10G GPU};
+\node[medoraData, below=0.9cm of ec2, text width=3.0cm] (ollama) {Ollama\\open-source LLMs};
+\node[medoraData, left=of ollama, text width=3.0cm] (bench) {Benchmark scripts\\API and Ollama profiles};
+\node[medoraStore, right=of ollama, text width=2.8cm] (models) {Llama, Gemma\\Phi, MedLlama};
+\draw[medoraArrow] (mac) -- (repo);
+\draw[medoraArrow] (repo) -- (ec2);
+\draw[medoraArrow] (ec2) -- (ollama);
+\draw[medoraArrow] (ollama) -- (models);
+\draw[medoraArrow] (ollama) -- (bench);
+\draw[medoraDashed] (bench) |- (mac);
+\end{tikzpicture}}
+\caption{Deployment-preparation layout for API development, EC2/Ollama local-model hosting, and benchmark execution.}
+\label{fig:deployment_preparation}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\caption{EC2 deployment-preparation environment.}
+\label{tab:deployment_environment}
+\begin{tabular}{p{0.34\textwidth} p{0.46\textwidth}}
+\toprule
+\textbf{Item} & \textbf{Recorded setup}\\
+\midrule
+Instance type & AWS EC2 \texttt{g5.2xlarge}\\
+GPU & NVIDIA A10G with 24GB VRAM\\
+RAM and storage & 32GB RAM and 300GB EBS volume\\
+Region and OS & \texttt{eu-north-1} Stockholm, Ubuntu 22.04\\
+Container tooling & Docker v29.4.2 installed, full pipeline containerization still pending\\
+Model host & Ollama installed and used for open-source model serving\\
+Repository setup & Medora repository cloned, benchmarking branch checked out, dependencies installed, data copied, and ChromaDB rebuilt\\
+Security exposure & SSH only at this stage, no application ports exposed\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Open-source models downloaded for Ollama deployment preparation.}
+\label{tab:ollama_models}
+\begin{tabular}{p{0.36\textwidth} p{0.32\textwidth} p{0.16\textwidth}}
+\toprule
+\textbf{Model} & \textbf{Ollama ID} & \textbf{Disk size}\\
+\midrule
+Llama 3.1 70B, 4-bit quantized & \texttt{llama3.1:70b-instruct-q4\_K\_M} & 42GB\\
+Gemma 2 27B & \texttt{gemma2:27b} & 15GB\\
+Phi-4 14B & \texttt{phi4:14b} & 9GB\\
+Llama 3.1 8B & \texttt{llama3.1:8b} & 5GB\\
+MedLlama2 7B & \texttt{medllama2:7b} & 4GB\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The LLM configuration supports a unified \texttt{make\_llm()} direction. Model names containing a colon, such as \texttt{gemma2:27b}, route to Ollama. API model names without a colon, such as \texttt{gpt-5.4-mini}, route to OpenAI when an API profile is used. The command-line flags \texttt{--model}, \texttt{--provider}, and \texttt{--ollama-url} make the same scripts usable for local development, EC2 runs, and remote Ollama testing.
+
+This is deployment preparation, not a claim of completed production deployment. The deployment guide still lists remaining work: containerize the full pipeline, add Docker Compose or systemd services, configure Ollama startup, decide on Elastic IP, add HTTPS, expose only approved services, finish any remaining full EC2 benchmark sweeps, and harden the web application stack for production. The important progress is that the project no longer treats open-source hospital inference as an abstract future idea. We prepared the GPU environment, installed the model host, downloaded candidate models, rebuilt the vector store, and connected benchmark configuration to both API and Ollama profiles.
+
+\section{Phase 8.1: Backend API and Database Implementation}
+
+Phase 8.1 turns the earlier scripts and agent modules into a persistent backend service. The backend is implemented with FastAPI, PostgreSQL, SQLAlchemy, Alembic, Pydantic schemas, and JWT authentication. Its role is not to replace the clinical agents. Its role is to provide the application boundary around them: users, roles, patient profiles, triage sessions, messages, clinical reports, retrieval traceability, feedback, and system health.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tikzpicture}[node distance=0.85cm]
+\node[medoraBlock] (client) {React\\frontend};
+\node[medoraBlock, right=of client] (api) {FastAPI\\routes};
+\node[medoraWarn, below=0.85cm of api] (auth) {JWT auth\\role guards};
+\node[medoraStore, right=of api] (pg) {PostgreSQL\\app data};
+\node[medoraStore, right=of pg] (chroma) {ChromaDB\\textbook vectors};
+\node[medoraBlock, below=0.85cm of pg] (services) {Service layer\\agents + reports};
+\node[medoraData, right=of services] (trace) {RAG traces\\audit + latency};
+\draw[medoraArrow] (client) -- (api);
+\draw[medoraArrow] (api) -- (pg);
+\draw[medoraDashed] (api) -- (auth);
+\draw[medoraArrow] (api) -- (services);
+\draw[medoraDashed] (services) -- (chroma);
+\draw[medoraArrow] (services) -- (trace);
+\draw[medoraDashed] (trace) -- (pg);
+\end{tikzpicture}}
+\caption{Backend architecture separating application data in PostgreSQL from textbook vector search in ChromaDB.}
+\label{fig:backend_application_architecture}
+\end{figure}
+
+The backend exposes six route groups. Authentication routes create accounts, issue tokens, return the current user, and support password changes. Patient routes manage the patient profile, structured medical history, consent records, and triage sessions. Triage routes create sessions, exchange messages with the agent layer, expose the current agent phase, end sessions, and block patient access to diagnosis reports. Doctor routes expose assigned patients, reports, full-chain clinical context, feedback submission, and feedback statistics. Admin routes support user creation, user updates, hospital lookup, and doctor assignment. System routes expose health checks.
+
+\begin{longtable}{p{0.20\textwidth} p{0.36\textwidth} p{0.34\textwidth}}
+\caption{Backend route groups.}
+\label{tab:backend_route_groups}\\
+\toprule
+\textbf{Route group} & \textbf{Examples} & \textbf{Purpose}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Route group} & \textbf{Examples} & \textbf{Purpose}\\
+\midrule
+\endhead
+Authentication & \texttt{/auth/signup}, \texttt{/auth/signin}, \texttt{/auth/me}, \texttt{/auth/change-password} & Account creation, token issuance, current-user lookup, and password update.\\
+Patient & \texttt{/patients/me}, \texttt{/patients/me/medical-history}, \texttt{/patients/me/consents} & Patient demographics, history, and consent data.\\
+Triage & \texttt{/triage/sessions}, \texttt{/triage/sessions/\{id\}/message}, \texttt{/triage/sessions/\{id\}/phase}, \texttt{/triage/sessions/\{id\}/end} & Patient-safe session lifecycle and agent interaction.\\
+Doctor & \texttt{/doctor/reports}, \texttt{/doctor/reports/\{id\}}, \texttt{/doctor/reports/\{id\}/full-chain}, \texttt{/doctor/feedback/statistics} & Doctor report review, full clinical context, and feedback analytics.\\
+Admin & \texttt{/admin/users}, \texttt{/admin/hospitals}, \texttt{/admin/assign-doctor} & User administration and patient-doctor assignment.\\
+System & \texttt{/health}, \texttt{/health/db} & Liveness and database connectivity checks.\\
+\bottomrule
+\end{longtable}
+
+The PostgreSQL schema is organized around operational data rather than vector search data. Hospital and user tables support multi-tenant ownership and role-specific profiles. Patient tables store demographics, structured medical history, and consent events. Triage tables store sessions and messages. Clinical report and doctor feedback tables store the physician-facing output and review signal. RAG traceability tables record retrieval queries and retrieved chunk metadata without duplicating textbook chunk text from ChromaDB. Audit and performance tables provide the database structure needed for later monitoring and compliance work.
+
+\begin{longtable}{p{0.26\textwidth} p{0.58\textwidth}}
+\caption{Backend persistence design.}
+\label{tab:backend_persistence_design}\\
+\toprule
+\textbf{Table group} & \textbf{Implemented responsibility}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Table group} & \textbf{Implemented responsibility}\\
+\midrule
+\endhead
+Hospital and users & Hospitals, users, doctor profiles, patient profiles, roles, active status, registration method, and admin-created accounts.\\
+Patient clinical data & Medical history JSONB fields, consent events, demographics, and assigned doctor linkage.\\
+Triage sessions and messages & Session status, urgency, escalation type, chat retention policy, message sender, message type, and doctor visibility flags.\\
+Clinical reports & Presenting complaints, history, summary, suspected conditions, red flags, urgency, recommended action, routing, workup, admission/referral criteria, escalation message, model metadata, and doctor visibility.\\
+RAG traceability & Query text, retrieve count, final count, embedding model, reranker model, chunk IDs, original rank, final rank, vector distance, rerank score, chapter, section, and whether a chunk was used in the answer.\\
+Feedback and observability & Doctor rating, correction text, feedback category, audit events, and latency fields for retrieval, reranking, LLM calls, and total request time.\\
+\bottomrule
+\end{longtable}
+
+The authentication design uses signed Bearer tokens and role-specific FastAPI dependencies. Patient routes require the patient role. Doctor routes require doctor or admin access and filter records by assigned doctor. Admin routes require the admin role. Clinical reports are deliberately doctor-facing: the patient session endpoint for reports returns a forbidden response, while the doctor report endpoint returns the structured report only to the assigned physician or an admin.
+
+\section{Phase 8.2: Frontend UI Implementation}
+
+Phase 8.2 implements the user-facing application as a React and TypeScript single-page app built with Vite. The frontend communicates with the backend through typed API modules and does not contain clinical reasoning. It renders data, captures input, handles loading and error states, enforces route-level role boundaries for user experience, and leaves authorization, persistence, validation, and clinical workflow decisions to the backend.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tikzpicture}[node distance=0.85cm]
+\node[medoraBlock] (auth) {Auth pages\\login + signup};
+\node[medoraData, right=of auth] (ctx) {AuthContext\\token + user};
+\node[medoraWarn, right=of ctx] (guards) {ProtectedRoute\\RoleGuard};
+\node[medoraBlock, below=0.9cm of guards] (patient) {Patient\\dashboard + triage};
+\node[medoraBlock, left=of patient] (doctor) {Doctor\\patients + reports};
+\node[medoraBlock, right=of patient] (admin) {Admin\\users};
+\node[medoraStore, below=0.9cm of patient] (api) {Typed API\\modules};
+\draw[medoraArrow] (auth) -- (ctx);
+\draw[medoraArrow] (ctx) -- (guards);
+\draw[medoraArrow] (guards) -- (patient);
+\draw[medoraArrow] (guards) -- (doctor);
+\draw[medoraArrow] (guards) -- (admin);
+\draw[medoraArrow] (patient) -- (api);
+\draw[medoraArrow] (doctor) -- (api);
+\draw[medoraArrow] (admin) -- (api);
+\end{tikzpicture}}
+\caption{Frontend structure with centralized authentication state, route guards, role-specific pages, and typed API modules.}
+\label{fig:frontend_application_structure}
+\end{figure}
+
+The frontend is split into API modules, typed response models, reusable UI components, layout components, authentication guards, and role-specific pages. The API client attaches the Bearer token to every request and clears the local session on unauthorized responses. The route tree separates patient, doctor, and admin areas. The patient flow covers signup, login, dashboard, profile update, medical history, consent review, triage session list, and triage chat. The doctor flow covers dashboard metrics, assigned patients, report lists, full report details, urgency badges, model metadata, and structured feedback. The admin flow covers user listing, user creation, user editing, hospital selection, and doctor assignment.
+
+\begin{longtable}{p{0.22\textwidth} p{0.32\textwidth} p{0.36\textwidth}}
+\caption{Frontend role-specific flows.}
+\label{tab:frontend_role_flows}\\
+\toprule
+\textbf{Role} & \textbf{Main screens} & \textbf{Implemented behavior}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Role} & \textbf{Main screens} & \textbf{Implemented behavior}\\
+\midrule
+\endhead
+Patient & Dashboard, profile, medical history, triage list, triage session & Create sessions, send messages, view patient-safe agent responses, end sessions, and avoid direct access to diagnosis reports.\\
+Doctor & Dashboard, patients, patient detail, reports, report detail & Review assigned patients, inspect structured reports, view full-chain intake context, and submit feedback.\\
+Admin & User management & Create users, edit role/status fields, select hospitals, and assign doctors to patients.\\
+\bottomrule
+\end{longtable}
+
+The triage chat interface uses a request-response backend contract. It presents patient messages immediately, displays the agent response in a conversational layout, shows the current phase in patient-friendly language, keeps emergency escalation visible, and automatically scrolls as messages arrive. The word-by-word display is a frontend presentation effect after the complete response arrives; true token streaming remains a production improvement.
+
+Clinical report rendering is doctor-only. The report detail page maps structured report fields to labeled sections rather than displaying raw JSON. Urgency appears as a badge. Report metadata includes model version, diagnosis mode, diagnosis pass count, and chunks used. The feedback form captures a positive or negative rating plus optional correction text and category. This keeps the learning signal attached to physician review rather than patient interpretation.
+
+Error handling is centralized where possible. The Axios client handles authentication failures. Form components normalize backend validation errors into strings before rendering them, including FastAPI validation arrays. This avoids frontend crashes caused by rendering raw error objects and keeps the UI behavior consistent across patient, doctor, and admin flows.
+
+\section{Phase 9: Full-Stack App Integration}
+
+Phase 9 connects the agent pipeline to the backend and frontend. The main integration point is \texttt{AgentSessionManager}, a singleton service that maps each database triage session to live agent state. It creates and tracks \texttt{IntakeSession} and \texttt{TriageSession} objects, routes each patient message to the correct phase, stores phase transitions in PostgreSQL, and returns only patient-safe messages to the frontend.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tikzpicture}[node distance=0.85cm]
+\node[medoraBlock] (browser) {Patient\\browser};
+\node[medoraBlock, right=of browser] (triage) {Triage\\router};
+\node[medoraWarn, right=of triage] (manager) {AgentSession\\Manager};
+\node[medoraBlock, right=of manager] (intake) {Intake\\Session};
+\node[medoraBlock, below=0.85cm of intake] (diag) {Triage\\Session};
+\node[medoraStore, below=0.85cm of manager] (cache) {Shared model\\cache};
+\node[medoraStore, below=0.85cm of triage] (pg) {PostgreSQL\\sessions + reports};
+\node[medoraData, right=of diag] (doctor) {Doctor-only\\report view};
+\draw[medoraArrow] (browser) -- (triage);
+\draw[medoraArrow] (triage) -- (manager);
+\draw[medoraArrow] (manager) -- (intake);
+\draw[medoraArrow] (intake) -- (diag);
+\draw[medoraDashed] (cache) -- (diag);
+\draw[medoraArrow] (triage) -- (pg);
+\draw[medoraArrow] (diag) -- (pg);
+\draw[medoraArrow] (pg) -- (doctor);
+\end{tikzpicture}}
+\caption{Phase 9 integration path from patient messages through the agent session manager to doctor-only report storage.}
+\label{fig:phase9_full_stack_integration}
+\end{figure}
+
+The integrated phase state machine starts in intake. If the Intake Agent detects an emergency escalation, the session moves to an escalated state and returns an emergency-facing patient message. If the presentation is uncommon, the manager starts Mode B triage. If the presentation is a common symptom and sufficient for diagnosis, it can complete automatically. If more patient-reportable information is needed, it moves through Mode A follow-up questions before generating the report. When diagnosis is complete, the backend stores the clinical report and exposes it through doctor routes only.
+
+\begin{longtable}{p{0.30\textwidth} p{0.54\textwidth}}
+\caption{Phase 9 integration decisions.}
+\label{tab:phase9_integration_decisions}\\
+\toprule
+\textbf{Decision} & \textbf{Implementation}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Decision} & \textbf{Implementation}\\
+\midrule
+\endhead
+In-memory active sessions & Each active triage session maps to live agent objects in a Python dictionary and is evicted after inactivity. This keeps the prototype responsive while leaving distributed persistence for production.\\
+Shared model cache & ChromaDB, the bi-encoder, and the cross-encoder load once and are reused across sessions, avoiding repeated 10--15 second startup costs.\\
+Background memory updates & Patient Memory updates run after the HTTP response where possible so LLM-backed profile updates do not block the patient-facing message.\\
+Background feedback saves & FeedbackStore case saving is separated from the immediate response path, keeping the web flow responsive.\\
+Doctor-only diagnosis visibility & Diagnosis reports are stored in backend report tables and retrieved through doctor routes, while patient-facing triage routes expose only safe conversation messages and escalation text.\\
+Provider configuration & Backend settings pass \texttt{llm\_provider}, \texttt{llm\_model}, and \texttt{ollama\_url} into the agent creation path, allowing OpenAI-compatible development runs and Ollama/local-model runs.\\
+\bottomrule
+\end{longtable}
+
+The integration work also fixed practical mismatches between the standalone agent modules and the web application. The Patient Memory update path now receives the LLM object expected by the agent interface. Feedback saving uses the report data available from the integrated diagnosis output. Router settings pass provider and Ollama configuration instead of hardcoding a single provider. Memory and feedback operations no longer block the HTTP response. The shared model cache prevents model reloads for every new triage session.
+
+The result is a complete demonstration path: a patient can authenticate, start a triage session, exchange messages with the integrated agent flow, end the session, and have a structured clinical report stored for doctor review. The doctor can authenticate, open the report, inspect structured clinical sections and metadata, view the full-chain context, and submit feedback. The admin can manage users and doctor assignments. These capabilities make Medora a working full-stack prototype while preserving the central safety boundary: diagnosis is for clinician review, not direct patient self-treatment.
+
+The main remaining engineering risks are production-focused. Active agent sessions are process-local, so a multi-worker deployment needs Redis, database-backed graph state, sticky sessions, or another persistence strategy. The frontend simulates streaming rather than receiving true token streams. Prototype token storage should move to a hardened session design for deployment. The backend needs rate limiting, secure secret management, HTTPS termination, monitoring, complete audit workflows, and clinical validation before any hospital use.

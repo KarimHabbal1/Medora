@@ -1,0 +1,556 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Experimental Setup and Results
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\chapter{Experimental Setup and Results}
+\label{chapter:Experiments_Results}
+
+We evaluated Medora at the level that the implementation currently supports. We do not claim hospital clinical validation because we do not yet have a clinician-labeled patient dataset from a real deployment. Instead, we evaluated the pieces that are measurable and necessary for a safe prototype: extracted text quality, chunk statistics, embedding and vector-store build success, retrieval quality, reranker passage quality, agent behavior on representative cases, privacy-safe web evidence behavior, end-to-end benchmark performance, memory behavior, feedback storage, backend and frontend application behavior, full-stack integration behavior, and deployment feasibility.
+
+\section{Evaluation Philosophy}
+
+The evaluation follows the pipeline. If the PDF extraction is corrupt, retrieval cannot be trusted. If chunking loses clinical boundaries, embedding quality becomes less meaningful. If retrieval cannot surface the right passages, the Triage Agent will reason over weak evidence. If the agents cannot manage state, the conversation will be unreliable even with good retrieval. This is why the tests are layered rather than focused only on the final diagnosis output.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tikzpicture}[node distance=0.95cm]
+\node[medoraData] (text) {Text quality};
+\node[medoraData, right=of text] (chunks) {Chunk quality};
+\node[medoraData, right=of chunks] (retrieval) {Retrieval quality};
+\node[medoraData, right=of retrieval] (rerank) {Passage quality};
+\node[medoraBlock, below=0.85cm of retrieval] (agents) {Agent behavior};
+\node[medoraWarn, right=of agents] (web) {Web evidence};
+\node[medoraData, right=of web] (bench) {End-to-end\\benchmarks};
+\node[medoraStore, below=0.85cm of web] (feedback) {Review data};
+\draw[medoraArrow] (text) -- (chunks);
+\draw[medoraArrow] (chunks) -- (retrieval);
+\draw[medoraArrow] (retrieval) -- (rerank);
+\draw[medoraArrow] (rerank) |- (agents);
+\draw[medoraArrow] (agents) -- (web);
+\draw[medoraArrow] (web) -- (bench);
+\draw[medoraArrow] (agents) -- (feedback);
+\end{tikzpicture}}
+\caption{Layered evaluation strategy used for Medora.}
+\label{fig:evaluation_layers}
+\end{figure}
+
+\begin{longtable}{p{0.22\textwidth} p{0.36\textwidth} p{0.32\textwidth}}
+\caption{Evaluation matrix.}
+\label{tab:evaluation_matrix}\\
+\toprule
+\textbf{Layer} & \textbf{What we tested} & \textbf{Acceptance idea}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Layer} & \textbf{What we tested} & \textbf{Acceptance idea}\\
+\midrule
+\endhead
+PDF extraction & Section count, character count, and remaining PUA characters. & No PUA corruption remains in extracted clinical text.\\
+Chunking & Total chunks, distribution, under-target and over-target chunks, baseline comparison. & Chunks preserve structure while staying near the configured target.\\
+Embedding build & Batch success, shape, dimension, and failed chunks. & All chunks receive vectors with expected shape.\\
+Vector store & Record count, metadata, filters, and representative queries. & Stored records are queryable and filters behave correctly.\\
+Retrieval & Hit@k, MRR, and metadata filter pass rate. & Relevant clinical area appears in top 3.\\
+Reranking & Strict labels, multi-label labels, and offline GPT-4o judge scores used only for comparison. & Passage relevance improves without severe failures.\\
+Agents & Representative intake and triage scenarios. & State flow, follow-ups, red flags, and reports behave as designed.\\
+Web evidence & Privacy pass, source quality, valid JSON, approach comparison, and safe SearXNG failure. & Patient identifiers are removed, low-quality sources are filtered, and failures return structured limitations.\\
+End-to-end benchmarks & RAG diagnosis, web search diagnosis, exact/semantic/partial matching, generation failures, JSON errors, latency, and retrieval recall. & Identify what works, what fails, and whether failures come from retrieval or generation.\\
+Memory and feedback & Profile updates, context generation, case save, doctor review, export. & Data is persisted and reusable for future review.\\
+Backend and frontend & Authenticated route behavior, role boundaries, database persistence, patient chat, doctor report review, feedback submission, and admin user management. & Prototype app flow works without moving clinical reasoning into the browser.\\
+Full-stack integration & Agent phase transitions, shared model cache, report creation, patient-safe message filtering, and doctor-only diagnosis visibility. & Agent pipeline is reachable through the web application while preserving the review boundary.\\
+\bottomrule
+\end{longtable}
+
+\section{Data Quality Results}
+
+\subsection{PDF Extraction Results}
+
+The PDF extraction test scanned the final section records for remaining Private Use Area characters. The acceptance criterion was strict because any residual PUA character could appear inside a clinical term and damage retrieval. The final output passed this test.
+
+\begin{table}[htbp]
+\centering
+\caption{PDF extraction output quality.}
+\label{tab:extraction_results}
+\begin{tabular}{p{0.55\textwidth} c}
+\toprule
+\textbf{Metric} & \textbf{Value}\\
+\midrule
+Section records & 7,942\\
+Chapters extracted & 43\\
+Clean text characters & 8,655,430\\
+Remaining PUA characters & 0\\
+LLM-assisted residual corrections & 27 entries\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+This result matters because it proves that the downstream corpus is not built on visibly corrupted text. The two GPT-4o calls used for residual correction were small and targeted. The main correction mechanism remained deterministic and font-aware.
+
+\subsection{Chunking Results}
+
+Chunking was evaluated through descriptive statistics and comparison with the baseline. The baseline produced more chunks because it uses overlapping fixed windows. The structured chunker produced fewer chunks while preserving chapter and section metadata.
+
+\begin{table}[htbp]
+\centering
+\caption{Chunking output statistics.}
+\label{tab:chunking_results}
+\begin{tabular}{p{0.42\textwidth} c c}
+\toprule
+\textbf{Metric} & \textbf{Structured chunks} & \textbf{Baseline chunks}\\
+\midrule
+Total chunks & 5,631 & 8,216\\
+Mean word count & 196.1 & about 200\\
+Median word count & 154.0 & about 200\\
+Minimum word count & 2 & under 200\\
+Maximum word count & 568 & 200\\
+Chunks under 50 words & 41 & Not applicable\\
+Chunks above 500 words & 78 & 0\\
+Overlap & None & 50 words\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The under-target and over-target cases are not ignored. The 41 chunks under 50 words are real clinical remnants that could not be safely merged. The 78 chunks between 500 and 568 words are cases where preserving clinical coherence was more important than forcing an artificial split. The fixed baseline is cleaner statistically, but that cleanliness comes from ignoring section boundaries.
+
+\section{Embedding and Vector Store Results}
+
+The embedding build succeeded without failed batches or failed chunks. The output matrix shape was exactly what the vector-store builder expected: 5,631 rows and 768 columns.
+
+\begin{table}[htbp]
+\centering
+\caption{Embedding and vector store build results.}
+\label{tab:embedding_results}
+\begin{tabular}{p{0.52\textwidth} c}
+\toprule
+\textbf{Metric} & \textbf{Value}\\
+\midrule
+Embedding model & \texttt{embeddinggemma-300m-medical}\\
+Embedded chunks & 5,631\\
+Embedding dimension & 768\\
+Output matrix shape & $(5631, 768)$\\
+Batch size & 64\\
+Total batches & 88\\
+Failed batches & 0\\
+Failed chunks & 0\\
+Vector store & ChromaDB \texttt{tmt\_chunks}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The vector-store build also checked alignment between chunk records and embedding rows. This is a simple but important test. If a vector is stored with the wrong chunk metadata, retrieval output becomes misleading even when the embedding model works.
+
+\section{Retrieval Validation}
+
+\subsection{Query Set and Metrics}
+
+Retrieval validation used 20 manually designed clinical queries. The queries covered common symptom presentations, named conditions, and emergency scenarios. We chose manual queries because they let us inspect edge cases and explain whether a failure was a true retrieval error or a clinically valid alternative.
+
+\begin{table}[htbp]
+\centering
+\caption{Retrieval query categories.}
+\label{tab:retrieval_query_categories}
+\begin{tabular}{p{0.28\textwidth} c p{0.44\textwidth}}
+\toprule
+\textbf{Category} & \textbf{Count} & \textbf{Purpose}\\
+\midrule
+Symptom presentations & 11 & Test common patient complaints such as chest pain, dyspnea, fever, dysuria, and headache.\\
+Condition queries & 6 & Test known conditions and management concepts such as diabetes and rheumatoid arthritis.\\
+Emergency scenarios & 3 & Test urgent presentations where retrieval should surface high-risk clinical content.\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The metrics were Hit@k and Mean Reciprocal Rank. Hit@k measures whether the expected chapter or section appears in the top k results. Mean Reciprocal Rank rewards correct results that appear higher. Metadata filter pass rate checks whether all results obey a chapter filter when one is applied.
+
+\subsection{Retrieval Results and Interpretation}
+
+\begin{table}[htbp]
+\centering
+\caption{Retrieval validation summary.}
+\label{tab:retrieval_summary_results}
+\begin{tabular}{p{0.42\textwidth} c c}
+\toprule
+\textbf{Metric} & \textbf{Chapter-level} & \textbf{Section-level}\\
+\midrule
+Hit@1 & 90.0\% & 81.8\%\\
+Hit@3 & 100.0\% & 100.0\%\\
+Hit@5 & 100.0\% & 100.0\%\\
+MRR & 0.9500 & 0.9091\\
+Metadata filter pass rate & 100.0\% & Not applicable\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\resizebox{0.78\textwidth}{!}{
+\begin{tikzpicture}[x=1cm,y=0.055cm]
+\draw[->, medoragray] (0,0) -- (6.2,0);
+\draw[->, medoragray] (0,0) -- (0,110);
+\node[font=\small, rotate=90] at (-0.6,55) {percentage};
+\draw[fill=medorablue!30, draw=medorablue] (0.7,0) rectangle (1.4,90);
+\draw[fill=medoragreen!35, draw=medoragreen] (1.7,0) rectangle (2.4,100);
+\draw[fill=medoraamber!35, draw=medoraamber] (2.7,0) rectangle (3.4,100);
+\draw[fill=medorablue!15, draw=medorablue] (4.1,0) rectangle (4.8,81.8);
+\draw[fill=medoragreen!20, draw=medoragreen] (5.1,0) rectangle (5.8,100);
+\node[font=\scriptsize] at (1.05,95) {90.0};
+\node[font=\scriptsize] at (2.05,105) {100.0};
+\node[font=\scriptsize] at (3.05,105) {100.0};
+\node[font=\scriptsize] at (4.45,87) {81.8};
+\node[font=\scriptsize] at (5.45,105) {100.0};
+\node[font=\scriptsize] at (1.05,-6) {Chap H@1};
+\node[font=\scriptsize] at (2.05,-6) {Chap H@3};
+\node[font=\scriptsize] at (3.05,-6) {Chap H@5};
+\node[font=\scriptsize] at (4.45,-6) {Sec H@1};
+\node[font=\scriptsize] at (5.45,-6) {Sec H@3};
+\node[font=\small, align=center] at (3.1,118) {Retrieval reached 100.0\% Hit@3 at both chapter and section levels};
+\end{tikzpicture}}
+\caption{Retrieval validation metrics.}
+\label{fig:retrieval_metric_chart}
+\end{figure}
+
+The most important practical result is Hit@3. The Triage Agent receives multiple chunks, not only one. Therefore, a rank-2 result is still available to the LLM. The retrieval system had no recall failures at k=3 in the validation set.
+
+\begin{longtable}{p{0.30\textwidth} p{0.30\textwidth} p{0.30\textwidth}}
+\caption{Clinically valid rank-2 cases.}
+\label{tab:rank2_cases}\\
+\toprule
+\textbf{Query} & \textbf{Rank 1 result} & \textbf{Why it was not a true failure}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Query} & \textbf{Rank 1 result} & \textbf{Why it was not a true failure}\\
+\midrule
+\endhead
+Sharp chest pain radiating to the left arm & Heart Disease, distance 0.434 & The query suggests cardiac pathology, so Heart Disease is clinically relevant even if Common Symptoms was the expected label.\\
+Heart racing and fluttering sensation & Heart Disease, distance 0.510 & Palpitations appeared at rank 2, but Heart Disease is also a reasonable clinical area for arrhythmia symptoms.\\
+\bottomrule
+\end{longtable}
+
+\section{Reranker Evaluation}
+
+\subsection{Why Three Evaluation Views Were Needed}
+
+Reranking was evaluated with strict chapter matching, multi-label chapter matching, and LLM-as-judge content scoring. GPT-4o was used only as the offline judge for this comparison between retrieval configurations. We used all three views because each view answers a different question. Strict matching asks whether the result matches a single expected label. Multi-label matching asks whether the result is clinically acceptable. Content scoring asks whether the passage is useful for answering the query. In Medora, the last question is the most important for the Triage Agent.
+
+\begin{table}[htbp]
+\centering
+\caption{Reranking results.}
+\label{tab:reranking_summary_results}
+\begin{tabular}{p{0.40\textwidth} c c c}
+\toprule
+\textbf{Metric} & \textbf{Bi-encoder} & \textbf{BGE} & \textbf{MedCPT}\\
+\midrule
+Strict Chapter Hit@1 & 90.0\% & 70.0\% & 75.0\%\\
+Strict Chapter Hit@3 & 100.0\% & 100.0\% & 95.0\%\\
+Strict MRR & 0.950 & 0.842 & 0.842\\
+Multilabel Hit@1 & 100.0\% & 100.0\% & 95.0\%\\
+Multilabel Hit@3 & 100.0\% & 100.0\% & 100.0\%\\
+Multilabel MRR & 1.000 & 1.000 & 0.975\\
+LLM judge average score & 4.05 & \textbf{4.35} & 4.30\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The strict metric alone would make BGE look worse. The content metric shows why we kept it: the passages it promoted were more useful on average, and its worst score was 3 out of 5 rather than 2 out of 5. This result changed our evaluation mindset. We learned that a retrieval metric can be mathematically clean while still being clinically incomplete.
+
+\begin{longtable}{p{0.24\textwidth} p{0.28\textwidth} p{0.38\textwidth}}
+\caption{Representative reranker query analysis.}
+\label{tab:reranker_query_analysis}\\
+\toprule
+\textbf{Query area} & \textbf{Observed behavior} & \textbf{Interpretation}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Query area} & \textbf{Observed behavior} & \textbf{Interpretation}\\
+\midrule
+\endhead
+Atrial fibrillation & Bi-encoder scored 2, BGE and MedCPT scored 5. & Cross-encoders promoted treatment-relevant passages.\\
+Rheumatoid arthritis treatment & Bi-encoder scored 2, BGE and MedCPT scored 5. & Reranking improved the top passage for management-oriented queries.\\
+Diabetic ketoacidosis & Bi-encoder and BGE scored 4, MedCPT scored 2. & MedCPT returned biochemical detail rather than treatment protocol.\\
+Dysuria & BGE scored 3 while the others scored 4. & BGE promoted a BPH-related chunk that was less directly responsive.\\
+Fever with chills and night sweats & All methods were weak. & The query likely needs broader context or better source coverage.\\
+\bottomrule
+\end{longtable}
+
+\section{Agent Testing}
+
+The agent tests were scenario-based. We used representative cases to confirm state transitions, follow-up behavior, red flag handling, routing, and report generation. These are not clinical accuracy tests. They are functional and behavioral tests of the implemented agent workflows.
+
+\begin{longtable}{p{0.24\textwidth} p{0.36\textwidth} p{0.30\textwidth}}
+\caption{Representative agent test scenarios.}
+\label{tab:agent_tests}\\
+\toprule
+\textbf{Scenario} & \textbf{Expected behavior} & \textbf{Observed result}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Scenario} & \textbf{Expected behavior} & \textbf{Observed result}\\
+\midrule
+\endhead
+Detailed initial complaint & Facts already stated by the patient should be prefilled. & The agent reduced repeated questions.\\
+Vague answer & The agent should ask one targeted follow-up. & Follow-up fired once and avoided an infinite loop.\\
+Chest pain plus hemoptysis & The agent should detect multiple symptoms and merge relevant questions and red flags. & Multi-symptom intake was handled.\\
+Emergency red flag & The agent should stop ordinary intake and escalate. & Emergency path produced an escalation summary.\\
+Mode A triage & The agent should parse intake, retrieve evidence, and produce a provisional diagnosis. & The chest pain and hemoptysis case produced Pulmonary Embolism as primary diagnosis.\\
+Mode B triage & The agent should generate questions, retrieve targeted evidence, and refine if necessary. & The leg rash case produced Erythema Nodosum after Pass 3 refinement.\\
+Returning patient & Memory should be loaded and known facts should be confirmed. & Context string was injected into intake and triage.\\
+Doctor feedback & A completed case should be saved and reviewable. & Case JSON and export path were available.\\
+\bottomrule
+\end{longtable}
+
+\subsection{Mode A Case: Chest Pain and Hemoptysis}
+
+The Mode A test used a serious presentation: chest tightness radiating to both arms, exertional worsening, hemoptysis, ex-smoker status, and previous stroke. The sufficiency check judged the patient-reported information sufficient for an initial provisional diagnosis. Gaps such as pleuritic character and leg swelling were treated as clinician-assessable or investigation-related rather than causing a long patient interview. The final primary diagnosis was Pulmonary Embolism with high confidence. The main differentials were Acute Coronary Syndrome, Aortic Dissection, and Pericarditis. Recommended investigations included CTPA, D-dimer, ECG, troponin, and chest X-ray.
+
+\subsection{Mode B Case: Leg Rash}
+
+The Mode B test started from an uncommon raw complaint about a leg rash. The agent first performed broad retrieval, then generated questions about duration, spread, fever, joint pain, pain, appearance, fungal history, contact, and injury. The answers described a one-week slowly spreading painful raised red nodular rash with fever and joint pain. Pass 2 suggested Erythema Nodosum with moderate confidence. The refinement step recognized fever and joint pain as important and searched for associated conditions and causes. Pass 3 produced Erythema Nodosum with high confidence and recommended investigations such as throat swab or ASO, chest X-ray, QuantiFERON TB, ESR/CRP, ANA, and medication review.
+
+\section{Web Evidence Council Evaluation}
+
+The Web Evidence Council was evaluated separately from the main textbook RAG system because it solves a different problem. The RAG system retrieves from CMDT 2022. The Web Evidence Council retrieves current public evidence while protecting privacy and enforcing source governance. The evaluation therefore measured valid JSON, privacy pass, source quality, evidence completeness, safety, latency, and how different deterministic and local LLM-assisted approaches behaved.
+
+\begin{table}[htbp]
+\centering
+\caption{Web evidence validation outputs.}
+\label{tab:web_evidence_outputs}
+\begin{tabular}{p{0.34\textwidth} p{0.46\textwidth}}
+\toprule
+\textbf{Artifact} & \textbf{Purpose}\\
+\midrule
+\texttt{web\_evidence\_approach\_comparison.csv} & Mock-mode approach comparison over 20 questions.\\
+\texttt{web\_evidence\_mock20\_approach\_comparison.csv} & Deterministic 20-question comparison used to verify stable mechanics.\\
+\texttt{web\_evidence\_llama32\_approach\_comparison.csv} & Five-query local llama3.2 comparison of deterministic and LLM-assisted approaches.\\
+\texttt{web\_evidence\_searxng\_smoke\_test.json} & SearXNG smoke test showing safe rejection when the search backend is not configured.\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Local llama3.2 Web Evidence Council evaluation.}
+\label{tab:web_evidence_eval_llama}
+\begin{tabular}{p{0.27\textwidth} c c c c c}
+\toprule
+\textbf{Approach} & \textbf{Overall} & \textbf{JSON} & \textbf{Privacy} & \textbf{Avg sources} & \textbf{Latency}\\
+\midrule
+\texttt{deterministic\_only} & 0.9880 & 100\% & 100\% & 5.0 & 0.0009s\\
+\texttt{llm\_synthesis\_only} & 0.9880 & 100\% & 100\% & 5.0 & 25.3132s\\
+\texttt{full\_llm\_council} & 0.9574 & 100\% & 100\% & 5.0 & 73.9265s\\
+\texttt{llm\_claims\_and\_synthesis} & 0.9492 & 100\% & 100\% & 5.0 & 73.8594s\\
+\texttt{hybrid\_recommended} & 0.9349 & 100\% & 100\% & 5.0 & 49.5789s\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The strongest measured approach in the real local-model run was \texttt{deterministic\_only}. This was not our original expectation. We expected the hybrid approach to be strongest because it uses local LLM assistance only where language understanding should help. In practice, the local llama3.2 run added latency and safety warnings while extracting fewer claims. The result does not mean LLM-assisted councils are a bad idea. It means the current local model and prompts are not yet strong enough to beat the deterministic baseline.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{0.88\textwidth}{!}{
+\begin{tikzpicture}[x=1cm,y=0.05cm]
+\draw[->, medoragray] (0,0) -- (8.2,0);
+\draw[->, medoragray] (0,0) -- (0,85);
+\node[font=\small, rotate=90] at (-0.6,42) {mean latency in seconds};
+\draw[fill=medorablue!30, draw=medorablue] (0.7,0) rectangle (1.35,0.09);
+\draw[fill=medoragreen!35, draw=medoragreen] (1.85,0) rectangle (2.50,25.31);
+\draw[fill=medoraamber!35, draw=medoraamber] (3.00,0) rectangle (3.65,73.86);
+\draw[fill=medoraamber!55, draw=medoraamber] (4.15,0) rectangle (4.80,73.93);
+\draw[fill=medorared!25, draw=medorared] (5.30,0) rectangle (5.95,49.58);
+\node[font=\scriptsize] at (1.02,5) {0.0009};
+\node[font=\scriptsize] at (2.17,30) {25.3};
+\node[font=\scriptsize] at (3.32,79) {73.9};
+\node[font=\scriptsize] at (4.47,79) {73.9};
+\node[font=\scriptsize] at (5.62,55) {49.6};
+\node[font=\scriptsize, align=center] at (1.02,-7) {det.\\only};
+\node[font=\scriptsize, align=center] at (2.17,-7) {LLM\\summary};
+\node[font=\scriptsize, align=center] at (3.32,-7) {claims +\\summary};
+\node[font=\scriptsize, align=center] at (4.47,-7) {full\\council};
+\node[font=\scriptsize, align=center] at (5.62,-7) {hybrid};
+\node[font=\small, align=left, text width=2.0cm] at (7.0,52) {LLM-heavy variants were much slower in the measured local run.};
+\end{tikzpicture}}
+\caption{Latency comparison for local llama3.2 Web Evidence Council approaches.}
+\label{fig:web_evidence_latency_chart}
+\end{figure}
+
+The SearXNG smoke test is also important because it shows safe failure. When \texttt{SEARXNG\_BASE\_URL} was missing, the agent did not fabricate evidence. It returned a structured rejection with the limitation \texttt{missing\_searxng\_base\_url}, no sources, no LLM call, and a final decision of reject. This behavior is correct for a medical evidence tool: no reliable source means no usable evidence.
+
+\section{Phase 8: End-to-End Benchmarking}
+
+Phase 8 tested the complete RAG diagnosis path and the separate web search diagnosis path. This benchmark goes beyond retrieval metrics. It measures whether the system can produce the correct diagnosis, whether the correct evidence was retrieved, whether generation failed despite correct retrieval, whether JSON output was reliable, and how long each path took.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tikzpicture}[node distance=0.85cm]
+\node[medoraBlock] (case) {Clinical\\case};
+\node[medoraData, right=of case] (retrieval) {RAG or web\\retrieval};
+\node[medoraWarn, right=of retrieval] (llm) {LLM\\diagnosis};
+\node[medoraData, right=of llm] (judge) {Exact, semantic,\\partial, mismatch};
+\node[medoraStore, below=0.85cm of retrieval] (metrics) {Recall, JSON,\\latency, failures};
+\draw[medoraArrow] (case) -- (retrieval);
+\draw[medoraArrow] (retrieval) -- (llm);
+\draw[medoraArrow] (llm) -- (judge);
+\draw[medoraArrow] (retrieval) -- (metrics);
+\draw[medoraArrow] (llm) |- (metrics);
+\draw[medoraArrow] (judge) |- (metrics);
+\end{tikzpicture}}
+\caption{End-to-end benchmark architecture used to separate retrieval quality from generation quality.}
+\label{fig:benchmark_architecture}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\caption{Benchmark test sets.}
+\label{tab:benchmark_test_sets}
+\begin{tabular}{p{0.22\textwidth} p{0.20\textwidth} p{0.48\textwidth}}
+\toprule
+\textbf{Set} & \textbf{Size} & \textbf{Purpose}\\
+\midrule
+Textbook cases & 50 & Cases generated from the Medora textbook corpus, where the answer should exist in CMDT 2022.\\
+MedQA USMLE & 50 & Standardized clinical vignettes used to test generalization beyond direct textbook cases.\\
+MedCaseReasoning & 50 & Rare or complex published case reports used to stress-test textbook coverage and evaluate web search as a gap-filler.\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The matching scheme uses four categories. Exact means the primary diagnosis matches the ground truth term. Semantic means the diagnosis is clinically equivalent but worded differently. Partial means the correct diagnosis appears in the differential rather than as the primary diagnosis. Mismatch means the correct diagnosis is absent. Headline accuracy is exact plus semantic. Partial is reported separately because it still carries diagnostic signal, but it is not counted as correct.
+
+\begin{table}[htbp]
+\centering
+\caption{RAG benchmark on 50 textbook-derived cases.}
+\label{tab:rag_textbook_benchmark}
+\begin{tabular}{p{0.25\textwidth} c c c c c c}
+\toprule
+\textbf{Model} & \textbf{Accuracy} & \textbf{Exact} & \textbf{Semantic} & \textbf{Partial} & \textbf{Mismatch} & \textbf{JSON errors}\\
+\midrule
+GPT-5.4-mini & 74\% & 2\% & 72\% & 18\% & 8\% & 0\%\\
+Llama 3.1 8B & 42\% & 6\% & 36\% & 24\% & 34\% & 0\%\\
+Gemma 2 27B & 40\% & 8\% & 32\% & 24\% & 36\% & 0\%\\
+DeepSeek-R1 14B & 36\% & 14\% & 22\% & 22\% & 42\% & 24\%\\
+Aloe-8B & 36\% & 10\% & 26\% & 22\% & 42\% & 0\%\\
+MedLlama2 7B & Failed & N/A & N/A & N/A & N/A & N/A\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\resizebox{0.84\textwidth}{!}{
+\begin{tikzpicture}[x=1cm,y=0.07cm]
+\draw[->, medoragray] (0,0) -- (8.1,0);
+\draw[->, medoragray] (0,0) -- (0,85);
+\node[font=\small, rotate=90] at (-0.6,42) {accuracy percentage};
+\draw[fill=medorablue!30, draw=medorablue] (0.7,0) rectangle (1.35,74);
+\draw[fill=medoragreen!35, draw=medoragreen] (1.75,0) rectangle (2.40,42);
+\draw[fill=medoragreen!25, draw=medoragreen] (2.80,0) rectangle (3.45,40);
+\draw[fill=medoraamber!35, draw=medoraamber] (3.85,0) rectangle (4.50,36);
+\draw[fill=medoraamber!55, draw=medoraamber] (4.90,0) rectangle (5.55,36);
+\node[font=\scriptsize] at (1.02,79) {74};
+\node[font=\scriptsize] at (2.07,47) {42};
+\node[font=\scriptsize] at (3.12,45) {40};
+\node[font=\scriptsize] at (4.17,41) {36};
+\node[font=\scriptsize] at (5.22,41) {36};
+\node[font=\scriptsize, align=center] at (1.02,-7) {GPT-5.4\\mini};
+\node[font=\scriptsize, align=center] at (2.07,-7) {Llama\\8B};
+\node[font=\scriptsize, align=center] at (3.12,-7) {Gemma\\27B};
+\node[font=\scriptsize, align=center] at (4.17,-7) {DeepSeek\\14B};
+\node[font=\scriptsize, align=center] at (5.22,-7) {Aloe\\8B};
+\node[font=\small, align=left, text width=1.8cm] at (6.9,52) {MedLlama2 failed structured output.};
+\end{tikzpicture}}
+\caption{RAG accuracy on textbook-derived cases. API-model performance is the comparison ceiling, while open-source models show the current privacy-feasible gap.}
+\label{fig:rag_model_accuracy}
+\end{figure}
+
+The textbook benchmark produced two important findings. First, RAG works best when the answer exists in the knowledge base. GPT-5.4-mini reached 74\% accuracy on textbook-derived cases. Second, open-source deployment remains challenging. The best listed open-source RAG result was 42\% with Llama 3.1 8B. Gemma 2 27B was close at 40\%, while DeepSeek-R1 14B had a 24\% JSON error rate because chain-of-thought output interfered with parsing. MedLlama2 7B failed because it could not follow the structured output prompt.
+
+\begin{table}[htbp]
+\centering
+\caption{External and rare-case RAG benchmark results with GPT-5.4-mini.}
+\label{tab:external_rag_benchmark}
+\begin{tabular}{p{0.32\textwidth} c c c}
+\toprule
+\textbf{Test set} & \textbf{Accuracy} & \textbf{Retrieval recall} & \textbf{Mean latency}\\
+\midrule
+MedQA USMLE & 64\% & 42\% & 12.2s\\
+MedCaseReasoning, RAG only & 30\% & 22\% & 20.8s\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The drop from textbook cases to MedQA and rare cases is not mysterious. It follows retrieval coverage. On MedQA, retrieval recall was 42\% and accuracy was 64\%. On MedCaseReasoning, retrieval recall was only 22\% and accuracy fell to 30\%. When the knowledge base does not contain the answer, the generator cannot reliably recover it. This is why Phase 6 and the web search benchmark matter.
+
+\begin{table}[htbp]
+\centering
+\caption{Web search benchmark on 50 MedCaseReasoning cases.}
+\label{tab:web_search_benchmark}
+\begin{tabular}{p{0.24\textwidth} c c c c c c}
+\toprule
+\textbf{Model} & \textbf{Accuracy} & \textbf{Exact} & \textbf{Semantic} & \textbf{Partial} & \textbf{Mismatch} & \textbf{Latency}\\
+\midrule
+GPT-5.4-mini & 42\% & 4\% & 38\% & 30\% & 28\% & 6.1s\\
+Gemma 4 local & 36\% & 20\% & 16\% & 28\% & 36\% & 16.6s\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\resizebox{0.78\textwidth}{!}{
+\begin{tikzpicture}[x=1cm,y=0.08cm]
+\draw[->, medoragray] (0,0) -- (6.4,0);
+\draw[->, medoragray] (0,0) -- (0,55);
+\node[font=\small, rotate=90] at (-0.55,27) {accuracy percentage};
+\draw[fill=medorablue!30, draw=medorablue] (0.9,0) rectangle (1.65,30);
+\draw[fill=medoragreen!35, draw=medoragreen] (2.45,0) rectangle (3.20,42);
+\draw[fill=medoraamber!35, draw=medoraamber] (4.00,0) rectangle (4.75,36);
+\node[font=\scriptsize] at (1.27,35) {30};
+\node[font=\scriptsize] at (2.82,47) {42};
+\node[font=\scriptsize] at (4.37,41) {36};
+\node[font=\scriptsize, align=center] at (1.27,-6) {RAG\\GPT-5.4-mini};
+\node[font=\scriptsize, align=center] at (2.82,-6) {Web search\\GPT-5.4-mini};
+\node[font=\scriptsize, align=center] at (4.37,-6) {Web search\\Gemma 4};
+\node[font=\small, align=center, text width=5.2cm] at (2.9,60) {Web search improved rare-case coverage because the textbook corpus missed many published case-report diagnoses.};
+\end{tikzpicture}}
+\caption{RAG versus web search on MedCaseReasoning rare cases.}
+\label{fig:rag_vs_web_search}
+\end{figure}
+
+The web search path improved GPT-5.4-mini rare-case accuracy from 30\% to 42\% and reduced mismatch from the RAG rare-case baseline. It was also faster in the recorded benchmark, 6.1s compared with 20.8s for RAG, because it skipped embedding, vector search, and reranking. The tradeoff is that web pages are less controlled than textbook chunks, which is exactly why the safer Web Evidence Council uses privacy controls, source tiers, council review, and limitations instead of treating web search as an unrestricted replacement for RAG.
+
+\section{Cost and Runtime Considerations}
+
+The current prototype prioritizes correctness and traceability, but the intended hospital deployment also prioritizes privacy. Patient-facing inference should run on hospital infrastructure using open-source models, not hosted commercial APIs. GPT-4o was used for offline and development-time tasks: residual PUA correction, static symptom structuring, LLM-as-judge retrieval evaluation, and functional agent testing through the current ChatOpenAI-compatible scripts. GPT-5.4-family models were used for benchmark comparison and judge tasks. Those uses helped build and measure the system, but a hospital deployment must route runtime patient conversations to a validated local model adapter instead.
+
+\begin{table}[htbp]
+\centering
+\caption{Runtime model call estimates from phase documentation.}
+\label{tab:llm_call_estimates}
+\begin{tabular}{p{0.38\textwidth} c p{0.33\textwidth}}
+\toprule
+\textbf{Workflow} & \textbf{Typical call count} & \textbf{Comment}\\
+\midrule
+Intake Agent, six-question session & about 22 & Local inference calls for detection, question generation, answer processing, follow-ups, urgency, and summary.\\
+Triage Mode A without follow-ups & 19 to 25 & Local inference calls for parsing, retrieval reasoning, sufficiency, and diagnosis report generation.\\
+Triage Mode A with follow-ups & 22 to 28 & Additional patient questions increase local model calls.\\
+Triage Mode B with Pass 3 & 27 to 35 & Heaviest path because it performs broad retrieval, targeted retrieval, and refinement.\\
+Future tiered local routing & Lower total & Smaller local models could handle classification and formatting while a stronger local medical model handles diagnosis.\\
+Web Evidence Council deterministic mode & Very low & No local LLM call is needed when deterministic extraction and synthesis are selected.\\
+Web Evidence Council local LLM modes & 25s to 74s in the llama3.2 comparison & Local LLM assistance added substantial latency in the measured Phase 6 experiment.\\
+EC2 g5.2xlarge preparation & About \$1.29 per hour plus EBS cost & Useful for open-source model benchmarking, but cost management is needed during long runs.\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Limitations}
+
+The evaluation has clear limits. The retrieval query set is small, even though it covers multiple categories. The LLM-as-judge scoring uses GPT-4o and GPT-5.4-family models, which is useful for offline comparison but not equivalent to clinician review. The benchmark cases are not real hospital encounters reviewed by local clinicians. The Patient Memory and Feedback Loop still include local JSON artifacts alongside the database-backed app prototype. The current local evidence base is a single 2022 textbook, so it may miss newer guidelines. The Web Evidence Council mitigates this with trusted current sources, but it depends on source availability, page-fetching quality, and local model quality when optional LLM modes are used. The app prototype demonstrates authenticated workflows and agent integration, but it has not gone through penetration testing, accessibility audit, clinician usability testing, or production load testing. The EC2/Ollama setup proves deployment preparation, not complete production deployment.
+
+These limitations do not invalidate the engineering work. They define the boundary of what the report can honestly claim. Medora demonstrates a complete and measurable prototype, but clinical deployment would require a larger clinician-reviewed evaluation set, hardened privacy and security controls, production identity management, complete audit workflows, formal validation, and regulatory review.
+
+\section{Future Work}
+
+Near-term engineering work should focus on production hardening rather than building the application shell from scratch. The main items are secure session and token design, true streaming or server-sent events for LLM output, persistent distributed agent sessions, HTTPS deployment, rate limiting, audit workflow completion, accessibility review, and load testing.
+
+Longer-term work includes clinician evaluation, larger query sets, multilingual intake, formal consent governance, continued hospital-server deployment of open-source models, stronger local model benchmarking, combined RAG plus web-evidence orchestration, and supervised fine-tuning using doctor-reviewed cases. The Feedback Loop was built specifically so this future work can be based on reviewed examples rather than guesses.

@@ -1,0 +1,273 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Design Process
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\chapter{Design Process}
+\label{chapter:design_process}
+
+The design process was not a direct path from the Fall proposal to the final Spring implementation. We began with a broad digital health idea, then narrowed it through implementation pressure, safety concerns, data availability, and the need for measurable results. The final Medora architecture is the result of repeated decisions: what to keep, what to reject, what to evaluate, and what to reserve for later.
+
+\section{From Healthify to Medora}
+
+The Fall Healthify idea was valuable because it forced us to study the healthcare workflow beyond a single chatbot. We considered patient education, appointment support, wearable data, medical record summarization, hospital resource allocation, and emergency room optimization. However, once we moved from concept to implementation, the breadth became a risk. A broad platform would have produced many shallow screens and few defensible technical results. A final year project needs depth, artifacts, evaluation, and clear engineering reasoning. Medora was the narrower system that satisfied those requirements.
+
+\begin{longtable}{p{0.22\textwidth} p{0.32\textwidth} p{0.32\textwidth}}
+\caption{How the Fall scope was reduced into the Spring system.}
+\label{tab:fall_scope_reduction}\\
+\toprule
+\textbf{Fall Healthify module} & \textbf{Reason we did not keep it as final scope} & \textbf{How the idea survived in Medora}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Fall Healthify module} & \textbf{Reason we did not keep it as final scope} & \textbf{How the idea survived in Medora}\\
+\midrule
+\endhead
+General AI consultation & Too broad and unsafe without grounding, triage rules, and doctor review. & Became the Intake Agent and textbook-grounded Triage Agent.\\
+Wearable integration & Required device data, user permissions, signal processing, and validation that were outside the available timeline. & Kept as future context for patient history and risk factors.\\
+Medical record summarization & Needed real records, privacy controls, and document variety that we did not have. & Replaced by Patient Memory and structured session summaries.\\
+Hospital resource optimization & Required hospital operational data, queue models, bed data, and stakeholder access. & Deferred because Medora focuses on pre-clinician information quality.\\
+Emergency room routing & Needed formal triage categories and clinical validation. & Reduced to red flag detection and provisional urgency classification.\\
+Journaling and patient wellness & Valuable but less central to the safety-critical intake and triage problem. & Deferred to future patient-facing product features.\\
+\bottomrule
+\end{longtable}
+
+This reduction was not a loss of ambition. It made the project stronger because we could now build the hard technical core properly: a clean medical corpus, retrieval, reranking, agents, memory, and feedback.
+
+\section{Constraints That Shaped the Architecture}
+
+We treated constraints as design inputs rather than obstacles. Some constraints came from the medical domain, some came from the available data, and some came from the final year project setting. Table \ref{tab:technical_constraints} shows the main constraints and the concrete design decisions they caused.
+
+\begin{longtable}{p{0.22\textwidth} p{0.40\textwidth} p{0.28\textwidth}}
+\caption{Technical and project constraints.}
+\label{tab:technical_constraints}\\
+\toprule
+\textbf{Constraint} & \textbf{Why it mattered} & \textbf{Design response}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Constraint} & \textbf{Why it mattered} & \textbf{Design response}\\
+\midrule
+\endhead
+Medical safety & Diagnostic language can influence care decisions, so fluent unsupported output is risky. & Keep diagnosis provisional, retrieve source passages, and add doctor feedback.\\
+No real hospital dataset & We did not have clinician-labeled patient cases or hospital operations data. & Use a medical textbook corpus and controlled validation queries.\\
+PDF text corruption & The textbook PDF extracted with PUA characters and layout issues. & Build a dedicated parser with per-font correction and layout-aware ordering.\\
+Clinical context boundaries & Fixed windows can split diagnosis criteria, admission rules, or treatment sections. & Use structure-aware chunks and keep a fixed baseline for comparison.\\
+Embedding token limits & Many medical chunks are too long for 512-token models after adding context. & Select a 2,048-token medical embedding model.\\
+Local reproducibility & The examiner should not need paid infrastructure to inspect the core system. & Use ChromaDB locally rather than Pinecone or another managed service.\\
+Multi-turn intake & Intake depends on previous answers, red flags, vague responses, and symptom combinations. & Use LangGraph state machines instead of single prompts or flat scripts.\\
+Limited time & A complete healthcare platform would be too shallow by submission time. & Focus on the core intake and triage workflow.\\
+Offline model cost & GPT-4o was useful for one-time preprocessing and evaluation, but it should not be part of patient-facing hospital inference. & Use GPT-4o only for offline artifact generation and experiments.\\
+Inference privacy & Patient conversations, memory, and diagnosis sessions may contain protected health information. & Target hospital-server deployment with open-source runtime models.\\
+Privacy & Patient memory, feedback, user profiles, and clinical reports may contain sensitive information. & Keep patient-facing inference in the hospital boundary, add role-based access control, and document production privacy gaps.\\
+Current evidence & CMDT 2022 is stable and auditable, but guidelines, warnings, and recommendations can change after publication. & Add a privacy-safe Web Evidence Council that retrieves trusted current sources without sending identifiers to search.\\
+Open-source runtime feasibility & Hospital inference needs local models, but model quality and structured output vary. & Prepare EC2/Ollama deployment and benchmark both API and open-source models.\\
+Application access & A script-only prototype cannot support patient, doctor, and admin workflows. & Add a FastAPI backend, PostgreSQL persistence, JWT role guards, and React frontend.\\
+Agent integration & Web requests need durable state across turns without reloading heavy retrieval models. & Add an AgentSessionManager, in-memory active sessions, and a shared model cache for prototype integration.\\
+\bottomrule
+\end{longtable}
+
+\section{Final Architecture}
+
+The architecture separates data preparation from retrieval, retrieval from agent reasoning, and agent output from doctor review. This separation helped us debug each stage independently. When retrieval performed well but triage output was incomplete, the problem was in the agent prompts or sufficiency checks. When a passage looked wrong, we could trace it back to chunking, metadata, or embedding.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tikzpicture}[x=1cm,y=1cm]
+\node[font=\small\bfseries, anchor=west, text=medoragray] at (-0.8,1.0) {Textbook knowledge layer};
+\node[font=\small\bfseries, anchor=west, text=medoragray] at (-0.8,-1.15) {Hospital runtime layer};
+\node[font=\small\bfseries, anchor=west, text=medoragray] at (-0.8,-4.85) {Current evidence and review layer};
+\node[medoraBlock] (pdf) at (0,0) {CMDT 2022\\PDF};
+\node[medoraData] (corpus) at (3.0,0) {Clean sections\\and chunks};
+\node[medoraData] (store) at (6.0,0) {Embeddings\\and ChromaDB};
+\node[medoraBlock] (rerank) at (9.0,0) {BGE\\reranker};
+\node[medoraData] (symptoms) at (0,-2.05) {Structured\\symptom JSON};
+\node[medoraBlock] (intake) at (3.0,-2.05) {Intake\\Agent};
+\node[medoraBlock] (triage) at (6.0,-2.05) {Triage\\Agent};
+\node[medoraWarn] (web) at (9.0,-2.05) {Web Evidence\\Council};
+\node[medoraBlock] (doctor) at (12.0,-2.05) {Doctor\\review};
+\node[medoraStore] (memory) at (3.0,-3.70) {Patient\\Memory};
+\node[medoraWarn, text width=3.0cm] (llm) at (6.0,-3.70) {Open-source\\LLM service};
+\node[medoraStore] (feedback) at (12.0,-3.70) {Feedback\\Store};
+\node[medoraData] (deploy) at (6.0,-5.45) {EC2/Ollama\\deployment prep};
+\node[font=\small\bfseries, anchor=west, text=medoragray] at (-0.8,-6.65) {Application layer};
+\node[medoraBlock] (frontend) at (0,-7.45) {React\\frontend};
+\node[medoraBlock] (backend) at (3.0,-7.45) {FastAPI\\backend};
+\node[medoraStore] (postgres) at (6.0,-7.45) {PostgreSQL\\app data};
+\node[medoraBlock] (manager) at (9.0,-7.45) {AgentSession\\Manager};
+\draw[medoraArrow] (pdf) -- (corpus);
+\draw[medoraArrow] (corpus) -- (store);
+\draw[medoraArrow] (store) -- (rerank);
+\draw[medoraDashed] (corpus) -- (symptoms);
+\draw[medoraArrow] (symptoms) -- (intake);
+\draw[medoraArrow] (intake) -- (triage);
+\draw[medoraArrow] (triage) -- (web);
+\draw[medoraArrow] (web) -- (doctor);
+\draw[medoraArrow] (doctor) -- (feedback);
+\draw[medoraDashed] (rerank) -- (triage);
+\draw[medoraDashed] (memory) -- (intake);
+\draw[medoraDashed] (memory) -- (triage);
+\draw[medoraDashed] (llm) -- (intake);
+\draw[medoraDashed] (llm) -- (triage);
+\draw[medoraDashed] (llm) -- (web);
+\draw[medoraDashed] (deploy) -- (llm);
+\draw[medoraArrow] (frontend) -- (backend);
+\draw[medoraArrow] (backend) -- (postgres);
+\draw[medoraArrow] (backend) -- (manager);
+\draw[medoraDashed] (manager) -- (intake);
+\draw[medoraDashed] (manager) -- (triage);
+\draw[medoraDashed] (backend) -- (doctor);
+\end{tikzpicture}}
+\caption{Final Medora architecture across data, retrieval, agents, current web evidence, memory, feedback, web application, and deployment preparation.}
+\label{fig:end_to_end_architecture}
+\end{figure}
+
+\section{Design Alternatives}
+
+The project included many alternatives that were either implemented as baselines, tested in small experiments, or rejected after analysis. Table \ref{tab:design_alternatives} records the most important decisions. This table is intentionally detailed because these alternatives explain why the final architecture looks the way it does.
+
+\begin{longtable}{p{0.18\textwidth} p{0.28\textwidth} p{0.34\textwidth} p{0.12\textwidth}}
+\caption{Main alternatives considered during the design process.}
+\label{tab:design_alternatives}\\
+\toprule
+\textbf{Decision area} & \textbf{Alternatives tried or considered} & \textbf{Reasoning and observed result} & \textbf{Final choice}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Decision area} & \textbf{Alternatives tried or considered} & \textbf{Reasoning and observed result} & \textbf{Final choice}\\
+\midrule
+\endhead
+Project scope & Full Healthify platform, focused Medora core & Full platform had too many weakly connected modules. Medora allowed implementation depth and evaluation. & Medora core\\
+Knowledge source & General LLM memory, unrestricted web search, medical textbook, governed web evidence & General memory is not inspectable. Unrestricted web search is current but unsafe without source policy and privacy controls. Textbook evidence is stable and reproducible but not always current. & CMDT RAG plus governed web evidence\\
+PDF extraction & Naive text extraction, span-level parser & Naive extraction produced corrupted PUA characters and wrong reading order. Span-level parsing exposed fonts, sizes, and coordinates. & PyMuPDF spans\\
+PUA correction & Global replacement, per-font mapping, LLM-only correction & Global replacement failed because the same code point could mean different characters in different fonts. LLM-only correction was unnecessary and less reproducible. & Per-font mapping with small LLM assist\\
+Layout ordering & Page text order, x-position sorting by column & Raw PDF order mixed two-column text. Column-aware sorting restored reading order. & Column-aware blocks\\
+Chunking & Fixed 200-word windows, structure-aware chunks & Fixed windows were easy to build but ignored clinical sections. Structured chunks kept chapter and section meaning. & Structured chunks plus baseline\\
+Symptom data & Retrieve symptom questions dynamically, pre-structure Chapter 2 & Dynamic retrieval for 11 common symptoms was unnecessary and less predictable. Structured objects gave stable intake behavior. & Structured symptom JSON\\
+Symptom LLM & GPT-4o, Llama 3.1 8B & Llama was cheaper and local but produced thinner outputs and at least one clinical reasoning error. GPT-4o was more complete and consistent for the one-time structuring task. & GPT-4o for offline preprocessing\\
+Runtime LLM & GPT-4o API, GPT-4o-mini API, OpenBioLLM-8B, local Llama-family models & Commercial APIs are convenient for experiments but create privacy concerns for hospital use. Open-source models can run inside the hospital boundary and keep patient data local. & Open-source hospital inference\\
+Web query privacy & Raw patient text, manually stripped text, deterministic sanitizer & Raw complaints may contain names, phone numbers, exact ages, dates, IDs, addresses, or free text. Manual removal is not reliable enough. & Deterministic sanitizer and allow-listed medical context\\
+Web source policy & Let the LLM judge sources, accept search order, deterministic source tiers & Search order can surface consumer or low-quality content. Pure LLM source judgment is harder to audit. Source tiers and rejected-domain rules are deterministic and testable. & Tiered source ranker plus council review\\
+Web evidence reasoning & Deterministic-only, LLM synthesis only, LLM claims and synthesis, full LLM council, hybrid council & The llama3.2 local experiment showed deterministic-only had the strongest measured score, while LLM-heavy options added latency and safety warnings. The hybrid design remains a future target after local model improvement. & Deterministic measured default with optional local LLM modes\\
+Benchmark model strategy & API models only, open-source models only, both & API models show an upper comparison point. Open-source models show privacy-feasible runtime behavior. Both are needed to understand the gap. & API benchmark plus Ollama benchmark\\
+Deployment environment & Local laptop only, managed cloud API only, EC2 GPU with Ollama & Laptop development is convenient but not enough for larger local models. Managed APIs conflict with the privacy goal. EC2 GPU allows open-source model hosting and benchmarking. & EC2 g5.2xlarge preparation\\
+Embedding model & BGE-M3, EmbeddingGemma medical, MedTE, MedCPT, BMRetriever, biomedical BERT models & The selected model balanced medical retrieval quality, token length, vector size, and local hardware feasibility. & EmbeddingGemma medical\\
+Vector store & Numpy cosine, FAISS, Pinecone, Weaviate, Qdrant, Milvus, ChromaDB & Numpy and FAISS lacked convenient metadata and document persistence. Cloud and server systems were heavier than needed. & ChromaDB\\
+Collection layout & One collection, one collection per chapter, separate Chapter 2 collection & Multiple collections would complicate retrieval and routing without improving validation results. & Single collection\\
+Distance metric & Cosine, Euclidean, inner product & The embedding model is used as a semantic retrieval model where cosine distance is the natural metric. & Cosine\\
+Reranker & No reranker, BGE, MedCPT, MiniLM, ColBERT-style model, mxbai, Jina & BGE improved content relevance. MedCPT was strong but had a DKA treatment failure. ColBERT was the wrong architecture for simple CrossEncoder reranking. & BGE\\
+Intake control & If/else script, single prompt, LangGraph & Intake needs durable state, branching, red flag handling, follow-ups, and summary generation. & LangGraph\\
+Triage mode & One broad diagnosis flow, two-mode flow & Common symptoms have structured intake context. Uncommon symptoms require broad retrieval and new questions. & Mode A and Mode B\\
+Sufficiency check & LLM yes/no judgment, criteria-based gap analysis & The yes/no approach was vague. Criteria extraction made missing patient-reportable information explicit. & Criteria gap analysis\\
+Patient memory & No memory, skip known facts, confirm known facts & No memory repeats work. Skipping facts risks stale data. Brief confirmation is safer. & Confirm known facts\\
+Feedback & No review, free notes, structured case store & Future improvement needs labeled cases with retrieved evidence and doctor decisions. & FeedbackStore\\
+Backend application & Script-only workflow, Flask, Django, FastAPI & FastAPI matched the typed Pydantic API style, dependency injection, and automatic OpenAPI documentation needed for a role-based prototype. & FastAPI\\
+Application database & SQLite, PostgreSQL, vector store only & The app needs relational users, sessions, reports, consent, feedback, JSONB clinical fields, UUIDs, and enforced enums. ChromaDB remains separate for vector search. & PostgreSQL plus ChromaDB\\
+Frontend architecture & Server-rendered pages, React SPA, mobile-only prototype & A React and TypeScript SPA matched the role-specific patient, doctor, and admin flows and kept clinical logic on the backend. & React SPA\\
+Agent web state & Recreate agents per request, persist every graph state in PostgreSQL, in-memory session manager & Recreating agents reloads models and loses conversation state. Full durable graph persistence is larger than the prototype needs. & In-memory manager with shared model cache\\
+\bottomrule
+\end{longtable}
+
+\section{Phase-Level Design Reasoning}
+
+\subsection{Data Processing Reasoning}
+
+The first design assumption we tested was that the textbook PDF could be extracted normally. That assumption failed. Private Use Area characters appeared inside medical terms, and the PDF's two-column layout did not map cleanly to reading order. This changed the nature of Phase 1.1. Instead of being a simple preprocessing step, PDF extraction became a core engineering phase. We chose a deterministic parser where possible because deterministic fixes are easier to audit than broad LLM cleanup. The LLM was used only for the final unresolved PUA entries, not as the main parser.
+
+For chunking, we kept the fixed-size baseline because it gave us a simple reference point. However, the final system uses structure-aware chunks because clinical text is not organized randomly. A section titled ``When to Admit'' or ``Differential Diagnosis'' has meaning. Splitting it blindly can separate criteria from context or merge unrelated clinical topics. The structured chunker therefore keeps metadata and tries to preserve the author's organization of the textbook.
+
+\subsection{Retrieval Reasoning}
+
+The retrieval design was shaped by two goals: high recall and useful passages. High recall means the correct evidence must appear in the retrieved set. Useful passages means the top passage should actually answer the query. The bi-encoder achieved 100.0\% Chapter Hit@3, which satisfied recall for the Triage Agent. Reranking was then added to improve passage usefulness. This is why the final path retrieves 10 candidates and sends the best 3 to the agent.
+
+We also learned that medical retrieval labels can be ambiguous. If the expected label for a query is Common Symptoms, but the best answer comes from Heart Disease, a strict single-label metric can mark a clinically useful result as wrong. For that reason, the final evaluation reports strict labels, multi-label labels, and content-level LLM judge scores.
+
+\subsection{Current Evidence Reasoning}
+
+The original RAG design intentionally used CMDT 2022 because a textbook corpus is stable, auditable, and reproducible. That choice made the early system safer than a free-form chatbot, but it also created a known limitation: clinical recommendations can change after publication. Antibiotic guidance, vaccination schedules, safety warnings, screening recommendations, and infectious disease guidance are examples where current public sources may matter.
+
+We did not solve that limitation by sending raw patient text to a web search engine. That would violate the privacy direction of the project. Instead, Phase 6 adds a governed evidence path. The Web Evidence Council first removes identifiers, converts exact age to age range, keeps only allowed medical context, and then searches trusted sources. Source ranking is mostly deterministic because it has to be inspectable: government and guideline sources receive bonuses, missing or old dates are penalized, and consumer or forum domains are rejected. Optional local LLM calls can help with claim extraction or synthesis, but deterministic fallbacks remain active.
+
+The Phase 6 comparison also changed our expectations. We initially expected the hybrid local LLM council to be the best practical approach. The measured llama3.2 experiment did not support that yet. Deterministic-only and synthesis-only approaches scored higher than the LLM-heavy council variants because the local model added latency and caution flags without consistently improving evidence extraction. The final report therefore presents deterministic-only as the current measured default, with the hybrid approach as the longer-term architecture after stronger local models and prompts are validated.
+
+\subsection{Agent Reasoning}
+
+We separated the Intake Agent from the Triage Agent because they solve different problems. Intake is about collecting patient history and surfacing urgency. It should not diagnose. Triage is about combining patient information with retrieved evidence and producing a provisional diagnosis report. Mixing these into one prompt would make debugging harder and would blur the safety boundary between asking questions and making diagnostic suggestions.
+
+The runtime model decision is also part of the safety and privacy design. During development, GPT-4o helped us create static artifacts and compare alternatives, such as GPT-4o versus Llama symptom structuring and BGE versus MedCPT reranking through an offline judge. GPT-4o was also useful for development-time agent testing because the current agent scripts use a ChatOpenAI-compatible interface. The final hospital-facing system should not send patient conversations to GPT-4o or any other external commercial API. The intended deployment pattern is to point that adapter to a validated hospital-hosted open-source or OpenAI-compatible local model, while the embedding model, reranker, vector store, patient memory, and feedback database also run on hospital-controlled infrastructure. The open-source runtime LLM can be OpenBioLLM-8B or another clinically appropriate local model after validation. This design keeps sensitive patient content inside the hospital network and makes the model stack auditable by the deploying institution.
+
+LangGraph was selected because the workflow is stateful. The Intake Agent needs to know which questions were already answered, whether an answer was vague, whether a red flag was triggered, and whether the case should be routed to common-symptom or uncommon-symptom triage. The Triage Agent needs to know which retrieval pass it is in, whether enough patient-reportable information exists, and whether Mode B has reached its refinement hard stop. These are graph problems more than simple prompt problems.
+
+\section{Design Iterations}
+
+Table \ref{tab:design_iterations} records the major iterations we went through. Each row represents a problem that changed the system design.
+
+\begin{longtable}{p{0.18\textwidth} p{0.34\textwidth} p{0.34\textwidth}}
+\caption{Major implementation-driven design iterations.}
+\label{tab:design_iterations}\\
+\toprule
+\textbf{Area} & \textbf{Problem discovered} & \textbf{Design change}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Area} & \textbf{Problem discovered} & \textbf{Design change}\\
+\midrule
+\endhead
+PDF extraction & The same PUA code could represent different characters in different embedded fonts. & Store and apply mappings per font rather than globally.\\
+PDF layout & Two-column pages were not read in clinical order. & Sort blocks by column and vertical position using page midpoint.\\
+Section detection & Regex headings alone were fragile. & Use font size, font identity, and the document table of contents.\\
+Chunking & Short clinical fragments created many weak chunks. & Merge short sections where clinical context matched.\\
+Chunking & Long sections exceeded the target length. & Split by paragraphs first, then sentences, then force word split only as a last resort.\\
+Symptom schema & The original 10-field schema missed admission, referral, treatment, etiology, and epidemiology information. & Expand to a 15-field schema after reviewing extracted symptom sections.\\
+Symptom extraction & Llama 3.1 8B produced valid JSON but missed several clinical details in the comparison run. & Use GPT-4o for offline structured symptom extraction, then deploy the reviewed static artifact locally.\\
+Embedding & General or short-context models risked truncation and domain mismatch. & Select a medical model with a 2,048-token context window.\\
+Vector store & Duplicate chunk IDs appeared during ingestion. & Suffix duplicate IDs during vector-store build and record the chunker-level issue.\\
+Retrieval evaluation & Strict labels punished clinically valid alternative chapters. & Add multi-label interpretation and content scoring.\\
+Reranking & Initial ColBERT-style option did not match the CrossEncoder interface needed. & Replace with BGE and MedCPT cross-encoder candidates.\\
+Intake v1 & Initial questions repeated facts already present in the first patient message. & Add prefill from the opening complaint.\\
+Intake v2 & Vague answers passed through without clarification. & Add one targeted follow-up per vague response.\\
+Intake v3 & Red flags could be missed when patients used everyday language. & Make red flag prompts map patient language to clinical concepts.\\
+Intake v4 & Single-symptom routing was too narrow. & Add multi-symptom support and merged question lists.\\
+Triage v1 & A single diagnosis flow did not handle uncommon symptoms well. & Split triage into Mode A and Mode B.\\
+Triage v2 & LLM sufficiency judgment was too vague. & Extract textbook criteria and compare them against patient-reportable gaps.\\
+Triage v3 & Uncommon symptom refinement could loop indefinitely. & Add a hard stop after Pass 3.\\
+Memory & Skipping known facts could silently preserve stale information. & Confirm known facts briefly at intake time.\\
+Feedback & Diagnosis output alone gave no learning signal. & Save full cases for doctor confirmation or rejection.\\
+Web evidence privacy & Raw search queries could leak identifiers. & Add deterministic PII removal and allow only de-identified medical context into web queries.\\
+Web source quality & Search results could include consumer sites, forums, or outdated pages. & Add source tiers, rejected domains, recency scoring, and council review.\\
+Web evidence experiments & Local LLM-heavy council variants were slower and produced more caution than expected. & Use deterministic-only as current measured default while keeping optional local LLM modes.\\
+Benchmarking & Retrieval metrics alone did not answer whether the system diagnoses correctly. & Add end-to-end RAG and web search benchmarks with exact, semantic, partial, and mismatch categories.\\
+Deployment & API development did not prove the privacy goal was feasible. & Start EC2/Ollama deployment preparation and benchmark open-source models.\\
+Backend & The application needed real role boundaries and persistent clinical records. & Add FastAPI routes, PostgreSQL tables, JWT role guards, and doctor-only report access.\\
+Frontend & The system needed a demonstration interface without moving clinical reasoning into the browser. & Add a React and TypeScript frontend with patient, doctor, and admin route groups.\\
+Integration & The first backend services were mockable but did not run the live agents. & Add AgentSessionManager, shared model cache, background memory and feedback tasks, and report generation from agent output.\\
+\bottomrule
+\end{longtable}
+
+\section{Standards and Responsible Design}
+
+We used standards as design references rather than certification claims. The current system is not deployed clinically and has not gone through regulatory approval. Still, the standards in Table \ref{tab:standards} shaped the way we discussed privacy, interoperability, security, quality, accessibility, and medical software risk.
+
+\begin{longtable}{p{0.24\textwidth} p{0.47\textwidth} p{0.19\textwidth}}
+\caption{Standards and guidelines considered during design.}
+\label{tab:standards}\\
+\toprule
+\textbf{Standard or guideline} & \textbf{How it informed the design} & \textbf{Prototype status}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Standard or guideline} & \textbf{How it informed the design} & \textbf{Prototype status}\\
+\midrule
+\endhead
+HL7 FHIR \cite{hl7fhir} & Guides future representation and exchange of patient, observation, medication, and encounter data. & Future integration\\
+HIPAA \cite{hipaa} & Informs how we discuss protected health information, access control, and storage risk. & Design reference\\
+GDPR \cite{gdpr} & Informs consent, minimization, access rights, and deletion expectations. & Design reference\\
+ISO/IEC 27001 \cite{iso27001} & Frames security management requirements for a deployed version. & Future deployment\\
+ISO/IEC 25010 \cite{iso25010} & Helps structure quality attributes such as reliability, usability, maintainability, and security. & Design reference\\
+WCAG 2.1 \cite{wcag21} & Guides patient-facing and doctor-facing interface accessibility. & Prototype reference; full audit needed\\
+ISO 14971 \cite{iso14971} & Becomes necessary if Medora is treated as medical device software. & Future risk file\\
+IEC 62304 \cite{iec62304} & Defines medical software lifecycle expectations for clinical deployment. & Future lifecycle process\\
+\bottomrule
+\end{longtable}
+
+The most important responsible-design decision is that Medora remains a doctor-reviewed decision support prototype. The system can structure the conversation and suggest a provisional diagnosis, but it does not discharge, prescribe, admit, or replace clinical judgment. This boundary is repeated throughout the implementation, evaluation, and impact chapters because over-trust is one of the central risks of medical AI.
