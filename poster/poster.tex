@@ -1,95 +1,105 @@
 \documentclass{article}
 \usepackage[paperwidth=1189mm,paperheight=841mm,margin=0mm]{geometry}
-\usepackage{fontspec}
 \usepackage[english]{babel}
-\IfFontExistsTF{Noto Sans}{
-  \setmainfont{Noto Sans}
-  \setsansfont{Noto Sans}
-}{
-  \IfFontExistsTF{Arial}{
-    \setmainfont{Arial}
-    \setsansfont{Arial}
-  }{
-    \setmainfont{TeX Gyre Heros}
-    \setsansfont{TeX Gyre Heros}
-  }
-}
+
+% Portable fonts
+\usepackage[T1]{fontenc}
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault}
 
 \usepackage{array}
 \usepackage{booktabs}
 \usepackage{graphicx}
 \usepackage{ragged2e}
 \usepackage{xcolor}
+\usepackage{pgfplots}
 \usepackage{tikz}
-\usetikzlibrary{arrows.meta,calc,positioning,shapes.geometric}
+\usepackage{enumitem}
+\usetikzlibrary{arrows.meta,calc,positioning,shapes.geometric,shapes.multipart,fit,shadows,backgrounds}
 
+\pgfplotsset{compat=1.17}
 \pagestyle{empty}
 \setlength{\parindent}{0pt}
-\renewcommand{\arraystretch}{1.12}
+\renewcommand{\arraystretch}{1.25}
+\setlist[itemize]{leftmargin=6mm,itemsep=0.8mm,topsep=0mm,parsep=0mm}
 
+% --- Premium Color Palette ---
 \definecolor{aub}{RGB}{112,0,45}
-\definecolor{aubdark}{RGB}{82,0,35}
 \definecolor{navy}{RGB}{17,48,79}
-\definecolor{ink}{RGB}{31,38,48}
-\definecolor{muted}{RGB}{91,105,120}
-\definecolor{paperbg}{RGB}{244,247,250}
+\definecolor{ink}{RGB}{20,25,32}
+\definecolor{muted}{RGB}{80,95,110}
+\definecolor{paperbg}{RGB}{238,242,246}
 \definecolor{panelbg}{RGB}{255,255,255}
-\definecolor{line}{RGB}{206,217,228}
-\definecolor{softblue}{RGB}{232,242,250}
-\definecolor{softgreen}{RGB}{230,247,240}
-\definecolor{softamber}{RGB}{254,243,224}
-\definecolor{softred}{RGB}{249,232,234}
-\definecolor{teal}{RGB}{34,119,104}
-\definecolor{amber}{RGB}{186,118,35}
-\definecolor{red}{RGB}{166,55,68}
+\definecolor{softline}{RGB}{215,224,232}
 
-\newcommand{\TitleFont}{\fontsize{60}{66}\selectfont}
-\newcommand{\SubTitleFont}{\fontsize{31}{37}\selectfont}
-\newcommand{\PanelTitleFont}{\fontsize{27}{32}\selectfont}
-\newcommand{\BodyFont}{\fontsize{20}{24}\selectfont}
-\newcommand{\SmallFont}{\fontsize{16.6}{20}\selectfont}
-\newcommand{\MetricFont}{\fontsize{45}{50}\selectfont}
+% Accent Colors
+\definecolor{accentteal}{RGB}{20,140,120}
+\definecolor{accentamber}{RGB}{210,130,30}
+\definecolor{accentred}{RGB}{180,50,60}
+\definecolor{accentblue}{RGB}{54,104,160}
 
+% Node Colors
+\definecolor{sysbg}{RGB}{240,246,252}
+\definecolor{sysdraw}{RGB}{150,180,210}
+\definecolor{databg}{RGB}{235,250,245}
+\definecolor{datadraw}{RGB}{130,200,180}
+\definecolor{riskbg}{RGB}{252,239,241}
+\definecolor{riskdraw}{RGB}{220,145,155}
+
+% --- Typography ---
+\newcommand{\TitleFont}{\fontsize{68}{76}\selectfont\bfseries}
+\newcommand{\SubTitleFont}{\fontsize{34}{42}\selectfont}
+\newcommand{\PanelTitleFont}{\fontsize{27}{33}\selectfont\bfseries}
+\newcommand{\BodyFont}{\fontsize{20}{27}\selectfont}
+\newcommand{\SmallFont}{\fontsize{16}{22}\selectfont}
+\newcommand{\TinyFont}{\fontsize{13}{18}\selectfont}
+\newcommand{\MetricValueFont}{\fontsize{52}{58}\selectfont\bfseries}
+\newcommand{\MetricLabelFont}{\fontsize{15}{19}\selectfont\bfseries\color{white!82}}
+
+% --- TikZ Styles ---
 \tikzset{
-  card/.style={rounded corners=6mm, fill=panelbg, draw=line, line width=1.1pt},
-  titleline/.style={draw=line, line width=0.9pt},
-  flow/.style={-{Latex[length=4.2mm]}, line width=1.7pt, draw=ink},
-  flowdash/.style={-{Latex[length=3.8mm]}, line width=1.45pt, dashed, draw=ink},
-  sys/.style={rounded corners=3mm, draw=navy, fill=softblue, line width=1.35pt, align=center, font=\bfseries\SmallFont, minimum height=17mm},
-  data/.style={rounded corners=3mm, draw=teal, fill=softgreen, line width=1.35pt, align=center, font=\bfseries\SmallFont, minimum height=17mm},
-  council/.style={rounded corners=3mm, draw=amber, fill=softamber, line width=1.35pt, align=center, font=\bfseries\SmallFont, minimum height=17mm},
-  risk/.style={rounded corners=3mm, draw=red, fill=softred, line width=1.35pt, align=center, font=\bfseries\SmallFont, minimum height=17mm},
-  store/.style={cylinder, shape border rotate=90, aspect=0.24, draw=ink, fill=white, line width=1.25pt, align=center, font=\bfseries\SmallFont, minimum height=17mm}
+  card/.style={rounded corners=6mm, fill=panelbg, draw=white, line width=0.7pt,
+    drop shadow={shadow xshift=0mm, shadow yshift=-4mm, fill=black, opacity=0.13}},
+  flow/.style={-{Latex[length=4mm, width=3mm]}, line width=1.8pt, draw=navy!82},
+  flowdash/.style={-{Latex[length=4mm, width=3mm]}, line width=1.6pt, dashed, draw=navy!48},
+  sys/.style={rounded corners=3mm, draw=sysdraw, fill=sysbg, line width=1.3pt, align=center, font=\bfseries\TinyFont, minimum height=18mm, text=ink},
+  data/.style={rounded corners=3mm, draw=datadraw, fill=databg, line width=1.3pt, align=center, font=\bfseries\TinyFont, minimum height=18mm, text=ink},
+  risk/.style={rounded corners=3mm, draw=riskdraw, fill=riskbg, line width=1.3pt, align=center, font=\bfseries\TinyFont, minimum height=18mm, text=ink},
+  store/.style={cylinder, shape border rotate=90, aspect=0.25, draw=sysdraw, fill=white, line width=1.3pt, align=center, font=\bfseries\TinyFont, minimum height=19mm, text=ink},
+  microcard/.style={rounded corners=3mm, fill=white, draw=softline, line width=1pt, align=left}
 }
 
-\newcommand{\panel}[6]{%
+% --- Panel Macro ---
+\newcommand{\panel}[7]{%
   \pgfmathsetmacro{\px}{#1}
   \pgfmathsetmacro{\py}{#2}
   \pgfmathsetmacro{\pw}{#3}
   \pgfmathsetmacro{\ph}{#4}
-  \pgfmathsetmacro{\titlex}{#1+9}
-  \pgfmathsetmacro{\titley}{#2+#4-8}
-  \pgfmathsetmacro{\linex}{#1+#3-9}
-  \pgfmathsetmacro{\liney}{#2+#4-27}
-  \pgfmathsetmacro{\bodyy}{#2+#4-36}
+  \pgfmathsetmacro{\padding}{18}
   \draw[card] (\px,\py) rectangle ++(\pw,\ph);
-  \node[anchor=north west, text=navy, font=\bfseries\PanelTitleFont] at (\titlex,\titley) {#5};
-  \draw[titleline] (\titlex,\liney) -- (\linex,\liney);
-  \node[anchor=north west, align=left, text=ink] at (\titlex,\bodyy) {%
-    \begin{minipage}{\dimexpr#3mm-18mm\relax}
+  \fill[#7, rounded corners=6mm] (\px,\py+\ph-8) rectangle ++(\pw,8);
+  \fill[#7] (\px,\py+\ph-8) rectangle ++(\pw,4);
+  \node[anchor=north west, text=ink, font=\PanelTitleFont] at (\px+\padding, \py+\ph-\padding+3) {#5};
+  \node[anchor=north west, align=left, text=ink] at (\px+\padding, \py+\ph-\padding-17) {%
+    \begin{minipage}{\dimexpr#3mm-2\dimexpr\padding mm\relax}
     \BodyFont\RaggedRight #6
     \end{minipage}
   };
 }
 
-\newcommand{\metriccard}[6]{%
-  \pgfmathsetmacro{\mx}{#1}
-  \pgfmathsetmacro{\my}{#2}
-  \pgfmathsetmacro{\mw}{#3}
-  \pgfmathsetmacro{\mcx}{#1+#3/2}
-  \draw[rounded corners=5mm, fill=white, draw=#6, line width=1.5pt] (\mx,\my) rectangle ++(\mw,53);
-  \node[anchor=north, text=#6, font=\bfseries\MetricFont] at (\mcx,\my+43) {#4};
-  \node[anchor=north, text=ink, align=center, font=\SmallFont] at (\mcx,\my+16) {#5};
+% --- Dark Mode Metric Macro ---
+\newcommand{\metric}[5]{%
+  \node[anchor=center, text=#5, font=\MetricValueFont] at (#1,#2+12) {#3};
+  \node[anchor=center, font=\MetricLabelFont, align=center] at (#1,#2-13) {#4};
+}
+
+\newcommand{\LogoOrBox}[3]{%
+  \IfFileExists{#1}{\includegraphics[height=#2]{#1}}{%
+    \begin{tikzpicture}[x=1mm,y=1mm]
+      \draw[rounded corners=3mm, line width=1.2pt, draw=#3] (0,0) rectangle (78,52);
+      \node[align=center, text=#3, font=\bfseries\SmallFont] at (39,26) {#3\\Logo};
+    \end{tikzpicture}%
+  }%
 }
 
 \begin{document}
@@ -101,260 +111,337 @@
 % ---------------------------------------------------------------------------
 % Header
 % ---------------------------------------------------------------------------
-\fill[white] (0,758) rectangle (1189,841);
-\fill[aub] (0,831) rectangle (1189,841);
-\draw[line] (0,758) -- (1189,758);
-\node[anchor=west] at (42,795) {\includegraphics[height=50mm]{photos/aub_logo.png}};
-\node[anchor=east] at (1146,795) {\includegraphics[height=50mm]{photos/msfea_logo.png}};
-\node[anchor=north, text=navy, align=center] at (594.5,825) {%
-  {\bfseries\TitleFont Medora}\\[-1mm]
-  {\SubTitleFont An AI-Powered Clinical Intake and Triage System}\\[1.6mm]
-  {\BodyFont Hamza Atout \quad $\cdot$ \quad Kosay Darwish \quad $\cdot$ \quad Karim Habbal}\\[0.5mm]
-  {\SmallFont Advisor: Prof. Ali Chehab \quad $\cdot$ \quad EECE 502 Final Year Project \quad $\cdot$ \quad Spring 2026}
+\fill[white] (0,720) rectangle (1189,841);
+\draw[softline, line width=1.2pt] (0,720) -- (1189,720);
+
+\node[anchor=west] at (40,780) {\LogoOrBox{photos/aub_logo.png}{65mm}{aub}};
+\node[anchor=east] at (1149,780) {\LogoOrBox{photos/msfea_logo.png}{65mm}{navy}};
+
+\node[anchor=north, text=aub, align=center] at (594.5,816) {%
+  {\TitleFont Medora}\\[2mm]
+  {\SubTitleFont\color{navy} AI-Powered Clinical Intake, Triage, and Doctor-Reviewed Reporting}\\[5mm]
+  {\BodyFont\color{ink} Hamza Atout \quad $\cdot$ \quad Kosay Darwish \quad $\cdot$ \quad Karim Habbal}\\[2mm]
+  {\SmallFont\color{muted} Advisor: Prof. Ali Chehab \quad $\cdot$ \quad EECE 502 Final Year Project \quad $\cdot$ \quad Spring 2026}
 };
 
 % ---------------------------------------------------------------------------
-% Metric strip
+% Metrics Ribbon
 % ---------------------------------------------------------------------------
-\metriccard{25}{691}{210}{7,942}{clean CMDT section records}{aub}
-\metriccard{257}{691}{210}{5,631}{structure-aware chunks}{teal}
-\metriccard{489}{691}{210}{0}{remaining PUA characters}{red}
-\metriccard{721}{691}{210}{100\%}{chapter and section Hit@3}{navy}
-\metriccard{953}{691}{210}{74\%}{best textbook RAG accuracy}{amber}
+\fill[navy, drop shadow={shadow xshift=0mm, shadow yshift=-3mm, fill=black, opacity=0.20}] (0,615) rectangle (1189,720);
+\metric{118}{667.5}{7,942}{CLEAN CMDT\\SECTION RECORDS}{white}
+\draw[white!20, line width=1pt] (237,635) -- (237,700);
+\metric{356}{667.5}{5,631}{STRUCTURE-AWARE\\CHUNKS}{accentteal}
+\draw[white!20, line width=1pt] (475,635) -- (475,700);
+\metric{594.5}{667.5}{0}{REMAINING PUA\\CHARACTERS}{accentred}
+\draw[white!20, line width=1pt] (714,635) -- (714,700);
+\metric{833}{667.5}{100\%}{CHAPTER \& SECTION\\HIT@3}{white}
+\draw[white!20, line width=1pt] (952,635) -- (952,700);
+\metric{1071}{667.5}{74\%}{BEST TEXTBOOK\\RAG ACCURACY}{accentamber}
 
 % ---------------------------------------------------------------------------
 % Left column
 % ---------------------------------------------------------------------------
-\panel{25}{509}{350}{169}{Problem, Motivation, and Intake Gap}{
-\textbf{Problem.} Patients describe symptoms in incomplete everyday language, while clinicians need structured history: onset, duration, severity, radiation, associated symptoms, risk factors, medications, allergies, and red flags.
+\panel{30}{430}{350}{165}{Problem, Motivation \& Need}{%
+\textbf{Problem.} Patients describe symptoms in everyday language, but clinicians need structured history, red flags, relevant risk factors, and source-grounded reasoning before review.
 
-\vspace{2mm}
-\begin{tabular}{p{0.34\linewidth}p{0.55\linewidth}}
-\toprule
-\textbf{Gap} & \textbf{Medora response}\\
-\midrule
-Loose complaint & 15-field structured intake.\\
-Missed red flags & Symptom-specific safety checks.\\
-No traceability & CMDT chapter and section evidence.\\
-Privacy risk & Hospital-server open-source runtime target.\\
-\bottomrule
-\end{tabular}
-}
-
-\panel{25}{344}{350}{145}{Design Decisions}{
+\vspace{5mm}
 {\SmallFont
-\begin{tabular}{p{0.30\linewidth}p{0.30\linewidth}p{0.31\linewidth}}
+\begin{tabular}{p{0.36\linewidth}p{0.55\linewidth}}
 \toprule
-\textbf{Choice} & \textbf{Tried or considered} & \textbf{Final design}\\
+\textbf{Patient says} & \textbf{Doctor needs}\\
 \midrule
-Knowledge & LLM memory, raw web, textbook & CMDT RAG plus governed web.\\
-Chunking & Fixed windows & Structure-aware chunks.\\
-Ranking & Bi-encoder only, MedCPT, BGE & BGE reranker.\\
-Current evidence & Unrestricted search & PII sanitizer and source tiers.\\
-Runtime & Hosted APIs & Local open-source target.\\
+``Chest tightness'' & onset, severity, radiation, exertion\\
+``Shortness of breath'' & duration, triggers, red flags\\
+``Leg swelling'' & unilateral/bilateral, pain, cardiac/renal risk\\
 \bottomrule
-\end{tabular}
-}
+\end{tabular}}
 
-\vspace{2mm}
-The Fall Healthify scope was narrowed into Medora so the project could show a deeper, testable clinical workflow rather than a broad wellness application.
-}
+\vspace{5mm}
+\textbf{Medora response.} Convert loose complaints into a structured clinician handover and a provisional evidence-grounded report for physician review.
+}{aub}
 
-\panel{25}{169}{350}{155}{Safety, Privacy, and Impact}{
-\textbf{Responsible AI boundary.} Medora produces provisional reports for physician review. It does not prescribe, admit, discharge, or replace a clinician.
-
-\vspace{2mm}
+\panel{30}{275}{350}{130}{Design Decisions}{%
 {\SmallFont
-\begin{tabular}{p{0.25\linewidth}p{0.65\linewidth}}
+\begin{tabular}{p{0.27\linewidth}p{0.33\linewidth}p{0.30\linewidth}}
 \toprule
-\textbf{Area} & \textbf{Design response}\\
+\textbf{Area} & \textbf{Rejected / baseline} & \textbf{Final design}\\
 \midrule
-Privacy & Intended hospital deployment keeps inference, retrieval, and memory local.\\
-Safety & Red flags and emergency routing are surfaced early.\\
-Evidence & Output cites retrieved textbook or trusted web sources.\\
-SDGs & SDG 3 health, SDG 9 innovation, SDG 10 access.\\
+Scope & broad Healthify & focused Medora core\\
+Evidence & LLM memory only & CMDT RAG + web council\\
+Chunking & fixed windows & structure-aware chunks\\
+Ranking & bi-encoder only & top-10 $\rightarrow$ BGE top-3\\
+Runtime & hosted APIs & hospital local model target\\
 \bottomrule
-\end{tabular}
-}
-}
+\end{tabular}}
 
-\panel{25}{80}{350}{69}{Clinical Output Snapshot}{
+\vspace{4mm}
+{\SmallFont\color{muted}\textit{The Fall concept was narrowed to a deeper, testable Spring implementation: intake, RAG triage, memory, feedback, app integration, and deployment preparation.}}
+}{navy}
+
+\panel{30}{100}{350}{150}{Safety Boundary \& Privacy}{%
+\textbf{Not an autonomous medical device.} Medora organizes information and produces provisional reports; the clinician keeps final diagnostic authority.
+
+\vspace{4mm}
 {\SmallFont
-\begin{tabular}{p{0.30\linewidth}p{0.60\linewidth}}
+\begin{tabular}{p{0.28\linewidth}p{0.62\linewidth}}
 \toprule
-\textbf{Input} & ``Chest pain, shortness of breath, coughing blood.''\\
+\textbf{Risk} & \textbf{Safeguard}\\
 \midrule
-\textbf{Handover} & 9-section structured note with red flags, history, medications, and allergies.\\
-\textbf{Triage} & Provisional diagnosis, differentials, investigations, urgency, and source citations.\\
+Over-trust & doctor-only diagnosis report\\
+PHI leakage & PII sanitizer before web search\\
+Black-box output & retrieved chunks and report metadata\\
+Runtime privacy & hospital-server open-source target\\
+Stale memory & known facts confirmed in intake\\
 \bottomrule
-\end{tabular}
-}
-}
+\end{tabular}}
+}{accentteal}
 
 % ---------------------------------------------------------------------------
 % Center column
 % ---------------------------------------------------------------------------
-\panel{395}{414}{400}{264}{System Architecture and Clinical Flow}{}
+\panel{410}{335}{370}{260}{System Architecture \& Clinical Flow}{%
+\vspace{4mm}
+\begin{center}
+\begin{tikzpicture}[
+  node distance=13mm and 8mm,
+  sys/.style={rounded corners=3mm, draw=sysdraw, fill=sysbg, line width=1.25pt, align=center, font=\bfseries\TinyFont, minimum height=17mm, text width=42mm, text=ink},
+  data/.style={rounded corners=3mm, draw=datadraw, fill=databg, line width=1.25pt, align=center, font=\bfseries\TinyFont, minimum height=17mm, text width=42mm, text=ink},
+  risk/.style={rounded corners=3mm, draw=riskdraw, fill=riskbg, line width=1.25pt, align=center, font=\bfseries\TinyFont, minimum height=17mm, text width=42mm, text=ink},
+  store/.style={cylinder, shape border rotate=90, aspect=0.25, draw=sysdraw, fill=white, line width=1.25pt, align=center, font=\bfseries\TinyFont, minimum height=19mm, text width=42mm, text=ink}
+]
+  % Clinical workflow row
+  \node[sys] (patient) {Patient\\Complaint};
+  \node[sys, right=of patient] (intake) {Intake\\Agent};
+  \node[data, right=of intake] (handover) {9-Section\\Handover};
+  \node[sys, right=of handover] (triage) {Triage\\Agent};
+  \node[data, right=of triage] (report) {Doctor\\Report};
 
-% Architecture swimlanes
-\draw[rounded corners=5mm, fill=softgreen!35, draw=teal!70, dashed, line width=1.2pt] (407,430) rectangle (790,637);
-\node[anchor=east, text=teal, font=\bfseries\SmallFont] at (784,631) {hospital local runtime boundary};
+  \draw[flow] (patient) -- (intake);
+  \draw[flow] (intake) -- (handover);
+  \draw[flow] (handover) -- (triage);
+  \draw[flow] (triage) -- (report);
 
-\node[anchor=west, text=muted, font=\bfseries\SmallFont] at (412,621) {Clinical workflow};
-\node[sys, text width=50mm] (patient) at (447,596) {Patient\\complaint};
-\node[sys, text width=50mm] (intake) at (527,596) {Intake\\Agent};
-\node[data, text width=56mm] (handover) at (610,596) {Structured\\handover};
-\node[sys, text width=50mm] (triage) at (694,596) {Triage\\Agent};
-\node[data, text width=55mm] (report) at (763,596) {Physician\\report};
-\draw[flow] (patient) -- (intake);
-\draw[flow] (intake) -- (handover);
-\draw[flow] (handover) -- (triage);
-\draw[flow] (triage) -- (report);
+  % Knowledge layer row
+  \node[data, below=16mm of patient] (cmdt) {CMDT\\2022};
+  \node[data, right=of cmdt] (parser) {PUA Fix +\\Parser};
+  \node[data, right=of parser] (chunks) {5,631\\Chunks};
+  \node[store, right=of chunks] (chroma) {ChromaDB\\Vectors};
+  \node[sys, right=of chroma] (rerank) {BGE\\Reranker};
+  \draw[flow] (cmdt) -- (parser);
+  \draw[flow] (parser) -- (chunks);
+  \draw[flow] (chunks) -- (chroma);
+  \draw[flow] (chroma) -- (rerank);
+  \draw[flowdash] (rerank.north) -- (triage.south);
 
-\node[anchor=west, text=muted, font=\bfseries\SmallFont] at (412,542) {Textbook evidence path};
-\node[data, text width=49mm] (cmdt) at (448,517) {CMDT\\2022};
-\node[data, text width=54mm] (parser) at (529,517) {Parser +\\chunks};
-\node[store, text width=50mm] (chroma) at (614,517) {ChromaDB\\vectors};
-\node[data, text width=54mm] (rerank) at (700,517) {BGE\\reranker};
-\draw[flow] (cmdt) -- (parser);
-\draw[flow] (parser) -- (chroma);
-\draw[flow] (chroma) -- (rerank);
-\draw[flowdash] (rerank) -- (triage);
+  % Evidence and review row
+  \node[risk, below=16mm of cmdt] (pii) {PII\\Sanitizer};
+  \node[sys, right=of pii] (search) {Trusted\\Search};
+  \node[sys, right=of search] (source) {Source\\Ranker};
+  \node[data, right=of source] (council) {Evidence\\Council};
+  \node[sys, right=of council] (feedback) {Doctor\\Feedback};
+  \draw[flow] (pii) -- (search);
+  \draw[flow] (search) -- (source);
+  \draw[flow] (source) -- (council);
+  \draw[flowdash] (council.north) -- (report.south);
+  % Doctor Report to Doctor Feedback: curved right-side route to avoid BGE Reranker
+  \coordinate (reviewlane) at ($(report.east)+(15mm,0)$);  
+  \draw[flow, rounded corners=6mm]   (report.east) -- (reviewlane)   |- (feedback.east);
 
-\node[anchor=west, text=muted, font=\bfseries\SmallFont] at (412,462) {Current-evidence and governance path};
-\node[risk, text width=50mm] (pii) at (449,437) {PII\\sanitizer};
-\node[council, text width=51mm] (search) at (531,437) {Trusted\\search};
-\node[council, text width=51mm] (source) at (614,437) {Source\\ranker};
-\node[council, text width=58mm] (council) at (704,437) {Evidence\\Council JSON};
-\node[store, text width=50mm] (memory) at (763,496) {Memory +\\Feedback};
-\draw[flow] (pii) -- (search);
-\draw[flow] (search) -- (source);
-\draw[flow] (source) -- (council);
-\draw[flowdash] (council) -- (report);
-\draw[flowdash] (memory) -- (intake);
-\draw[flowdash] (memory) -- (triage);
+  % Memory and application row
+  \node[store, above=13mm of handover] (memory) {Patient\\Memory};
+  \draw[flowdash] (memory.west) -| (intake.north);
+  \draw[flowdash] (memory.east) -| (triage.north);
+  \node[sys, below=15mm of source, text width=59mm] (backend) {FastAPI + PostgreSQL + JWT};
+  \node[sys, left=of backend, text width=50mm] (frontend) {React/TypeScript UI};
+  \node[store, right=of backend, text width=50mm] (db) {Reports + Traces};
+  \draw[flow] (frontend) -- (backend);
+  \draw[flow] (backend) -- (db);
+  % \draw[flowdash] (backend.north) -- (triage.south east);
+  \draw[flowdash] (feedback.south) |- (db.east);
 
-\panel{395}{247}{400}{147}{Implementation Roadmap}{}
-\node[data, text width=36mm] (p11) at (424,346) {1.1\\PDF};
-\node[data, text width=36mm] (p12) at (481,346) {1.2\\Chunks};
-\node[data, text width=36mm] (p21) at (538,346) {2.1\\Embed};
-\node[data, text width=36mm] (p22) at (595,346) {2.2\\Store};
-\node[data, text width=36mm] (p3) at (652,346) {3\\Rerank};
-\node[sys, text width=36mm] (p4) at (709,346) {4\\Intake};
-\node[sys, text width=36mm] (p5) at (766,346) {5\\Triage};
-\draw[flow] (p11) -- (p12);
-\draw[flow] (p12) -- (p21);
-\draw[flow] (p21) -- (p22);
-\draw[flow] (p22) -- (p3);
-\draw[flow] (p3) -- (p4);
-\draw[flow] (p4) -- (p5);
-\node[council, text width=45mm] (p6) at (495,290) {6\\Web evidence};
-\node[sys, text width=45mm] (p7) at (590,290) {7\\Feedback};
-\node[council, text width=45mm] (p8) at (685,290) {8\\Benchmarking};
-\node[council, text width=45mm] (dep) at (765,290) {Deploy\\prep};
-\draw[flow] (p5) |- (p6);
-\draw[flow] (p6) -- (p7);
-\draw[flow] (p7) -- (p8);
-\draw[flow] (p8) -- (dep);
-\node[anchor=west, text=ink, font=\SmallFont, align=left, text width=365mm] at (410,269) {Each phase produced a concrete artifact: clean sections, chunks, vectors, vector store, reranked retrieval, agent workflows, web evidence JSON, benchmarks, and EC2/Ollama deployment preparation.};
+\begin{scope}[on background layer]
+  \node[
+    fit=(patient)(report)(pii)(feedback)(frontend)(db)(memory)(reviewlane),
+    draw=accentteal!55,
+    fill=white,
+    dashed,
+    line width=1.3pt,
+    rounded corners=6mm,
+    inner sep=6mm
+  ] (boundary) {};
 
-\panel{395}{80}{400}{147}{Core Implementation Results}{
+  \node[
+    anchor=south east,
+    text=accentteal,
+    font=\bfseries\TinyFont,
+    inner sep=0pt,
+    yshift=1.5mm,
+    xshift=-2mm
+  ] at (boundary.north east) {Target hospital-controlled runtime};
+\end{scope}
+\end{tikzpicture}
+\end{center}
+}{aub}
+
+\panel{410}{100}{370}{205}{Implementation Roadmap}{%
+\vspace{3mm}
+\begin{center}
+\begin{tikzpicture}[node distance=5mm and 5mm]
+  \node[data, text width=34mm] (p1) {1.1\\PDF Extract};
+  \node[data, text width=34mm, right=of p1] (p2) {1.2\\Smart Chunks};
+  \node[data, text width=34mm, right=of p2] (p3) {2.1\\Embeddings};
+  \node[data, text width=34mm, right=of p3] (p4) {2.2\\ChromaDB};
+  \node[sys, text width=34mm, right=of p4] (p5) {3\\Rerank};
+  \node[sys, text width=34mm, right=of p5] (p6) {4\\Intake};
+  \node[sys, text width=34mm, below=14mm of p1] (p7) {5\\Triage};
+  \node[sys, text width=34mm, right=of p7] (p8) {6\\Web Evidence};
+  \node[sys, text width=34mm, right=of p8] (p9) {7\\Feedback};
+  \node[sys, text width=34mm, right=of p9] (p10) {8\\Benchmarks};
+  \node[sys, text width=34mm, right=of p10] (p11) {8.1/8.2\\App};
+  \node[data, draw=accentamber, fill=accentamber!20, text width=34mm, right=of p11] (p12) {9\\Integration};
+  \draw[flow] (p1) -- (p2); \draw[flow] (p2) -- (p3); \draw[flow] (p3) -- (p4); \draw[flow] (p4) -- (p5); \draw[flow] (p5) -- (p6);
+  \draw[flow, rounded corners=4mm] (p6) |- ($(p6.south)+(0,-7mm)$) -| (p7.north);
+  \draw[flow] (p7) -- (p8); \draw[flow] (p8) -- (p9); \draw[flow] (p9) -- (p10); \draw[flow] (p10) -- (p11); \draw[flow] (p11) -- (p12);
+\end{tikzpicture}
+\end{center}
+\vspace{5mm}
 {\SmallFont
-\begin{tabular}{p{0.29\linewidth}p{0.62\linewidth}}
+\begin{tabular}{p{0.31\linewidth}p{0.60\linewidth}}
 \toprule
-\textbf{Subsystem} & \textbf{Result}\\
+\textbf{Engineering layer} & \textbf{Concrete implementation evidence}\\
 \midrule
-PDF extraction & 7,942 section records, 43 chapters, 8,655,430 clean characters, 0 PUA characters.\\
-Chunking & 5,631 structure-aware chunks instead of 8,216 fixed baseline chunks.\\
-Symptoms & 11 symptom types with 15-field JSON schema for structured intake.\\
-Retrieval & 100\% Hit@3, MRR 0.95 on manually designed textbook queries.\\
-Agents & Intake creates a 9-section handover. Triage supports Mode A and Mode B.\\
-Web evidence & De-identified search, source tiers, claim extraction, council review, JSON output.\\
+Corpus & PyMuPDF parser, per-font PUA correction, two-column ordering\\
+Retrieval & medical embeddings, ChromaDB metadata filters, BGE reranking\\
+Agents & LangGraph intake, Mode A/Mode B triage, patient memory\\
+Application & FastAPI, PostgreSQL, React/TypeScript, doctor-only reports\\
 \bottomrule
-\end{tabular}
-}
-}
+\end{tabular}}
+
+\vspace{3mm}
+{\SmallFont\color{muted}\textbf{Output:} clean sections, chunk JSON, embedding matrix, vector store, RAG traces, diagnosis reports, feedback JSONL, and EC2/Ollama deployment preparation.}
+}{navy}
 
 % ---------------------------------------------------------------------------
 % Right column
 % ---------------------------------------------------------------------------
-\panel{815}{499}{349}{179}{Formal Testing and Clinical Cases}{
-{\SmallFont
-\begin{tabular}{p{0.29\linewidth}p{0.32\linewidth}p{0.30\linewidth}}
-\toprule
-\textbf{Layer} & \textbf{Metric} & \textbf{Result}\\
-\midrule
-Extraction & PUA scan & 0 remaining PUA.\\
-Chunking & Baseline comparison & 31\% fewer chunks.\\
-Retrieval & Hit@3, MRR & 100\%, 0.95.\\
-Reranking & Offline judge & 4.05 to 4.35.\\
-Web evidence & Privacy and JSON & 100\% pass.\\
-End-to-end & Diagnosis accuracy & 74\% best run.\\
-\bottomrule
-\end{tabular}
-}
-
-\vspace{2mm}
-\textbf{Cases.} Mode A surfaced pulmonary embolism for chest pain with hemoptysis and recent flight. Mode B reached erythema nodosum for painful bilateral leg nodules with fever and joint pain.
-}
-
-\panel{815}{285}{349}{194}{Benchmark Results and Analysis}{}
-\begin{scope}[shift={(840,334)}]
-  \draw[->, line width=1.2pt] (0,0) -- (286,0);
-  \draw[->, line width=1.2pt] (0,0) -- (0,112);
-  \node[anchor=south, rotate=90, font=\SmallFont, text=muted] at (-17,56) {accuracy};
-  \fill[aub!70] (19,0) rectangle (55,100);
-  \fill[teal!70] (75,0) rectangle (111,57);
-  \fill[teal!45] (131,0) rectangle (167,54);
-  \fill[amber!70] (187,0) rectangle (223,49);
-  \fill[red!50] (243,0) rectangle (279,49);
-  \node[font=\bfseries\BodyFont, text=aub] at (37,110) {74};
-  \node[font=\bfseries\BodyFont, text=teal] at (93,67) {42};
-  \node[font=\bfseries\BodyFont, text=teal] at (149,64) {40};
-  \node[font=\bfseries\BodyFont, text=amber] at (205,59) {36};
-  \node[font=\bfseries\BodyFont, text=red] at (261,59) {36};
-  \node[font=\SmallFont, rotate=35, anchor=east] at (58,-11) {GPT-5.4-mini};
-  \node[font=\SmallFont, rotate=35, anchor=east] at (114,-11) {Llama 8B};
-  \node[font=\SmallFont, rotate=35, anchor=east] at (170,-11) {Gemma 27B};
-  \node[font=\SmallFont, rotate=35, anchor=east] at (226,-11) {DeepSeek};
-  \node[font=\SmallFont, rotate=35, anchor=east] at (282,-11) {Aloe};
-\end{scope}
-\node[anchor=north west, text=ink, align=left] at (831,314) {%
-  \begin{minipage}{\dimexpr349mm-32mm\relax}
-  \SmallFont
-  Textbook RAG works when CMDT contains the answer. Open-source models are promising but still behind API benchmark models. Rare cases expose textbook coverage limits, where privacy-safe web evidence can help.
-  \end{minipage}
+\panel{810}{410}{350}{175}{Formal Testing \& Benchmark Analysis}{%
+\vspace{-4mm}
+\begin{center}
+\begin{tikzpicture}
+\begin{axis}[
+    ybar,
+    bar width=15mm,
+    width=0.94\linewidth,
+    height=72mm,
+    ymin=0, ymax=100,
+    enlarge x limits=0.16,
+    ylabel={\textbf{Accuracy (\%)}},
+    ylabel style={font=\TinyFont, text=ink},
+    symbolic x coords={GPT,Llama,Gemma,DeepSeek,Aloe},
+    xtick=data,
+    xticklabels={
+        {GPT-5.4\\mini},
+        {Llama 3.1\\8B},
+        {Gemma 2\\27B},
+        {DeepSeek\\R1 14B},
+        {Aloe\\8B}
+    },
+    x tick label style={
+        font=\bfseries\TinyFont,
+        text=ink,
+        align=center,
+        yshift=-1mm
+    },
+    y tick label style={font=\TinyFont, text=ink},
+    nodes near coords,
+    every node near coord/.append style={
+        font=\bfseries\SmallFont,
+        text=ink,
+        yshift=1mm
+    },
+    axis line style={line width=1.2pt, draw=ink},
+    ymajorgrids=true,
+    grid style={line width=0.7pt, dashed, draw=muted!30},
+    axis x line*=bottom,
+    axis y line*=left,
+    tick style={draw=none},
+    clip=false
+]
+\addplot[fill=aub, draw=none] coordinates {
+    (GPT,74)
+    (Llama,42)
+    (Gemma,40)
+    (DeepSeek,36)
+    (Aloe,36)
 };
+\end{axis}
+\end{tikzpicture}
+\end{center}
 
-\panel{815}{80}{349}{185}{Deployment Preparation and Next Software Phase}{
-The deployment target is a hospital server with local retrieval, local patient memory, and open-source inference.
-
-\vspace{2mm}
+\vspace{-1mm}
 {\SmallFont
-\begin{tabular}{p{0.34\linewidth}p{0.56\linewidth}}
+\textbf{Conclusion from tests.}
+GPT-5.4-mini is the API-model comparison ceiling. The other bars are open-source/local RAG runs for the hospital-deployable path. RAG is strongest when CMDT contains the answer; on rare MedCaseReasoning cases, RAG reached 30\%, while governed web search reached 42\%.
+}
+}{aub}
+
+\panel{810}{250}{350}{130}{Evaluation Matrix}{%
+\vspace{-2mm}
+{\SmallFont
+\renewcommand{\arraystretch}{1.18}
+\begin{tabular}{p{0.27\linewidth}p{0.36\linewidth}p{0.27\linewidth}}
 \toprule
-\textbf{Component} & \textbf{Prepared setup}\\
+\textbf{\color{navy}Layer} & 
+\textbf{\color{navy}Formal Test} & 
+\textbf{\color{navy}Result}\\
 \midrule
-Server & AWS EC2 g5.2xlarge, A10G 24GB GPU.\\
-Runtime & Ollama with Llama, Gemma, Phi, MedLlama.\\
-Storage & ChromaDB rebuilt on deployment machine.\\
-Pending & Web app, auth, audit logs, production DB.\\
+Data quality & PUA scan after PDF extraction & 0 remaining\\
+Chunking & Structured chunks vs baseline & 5,631 chunks\\
+Retrieval & Hit@k, MRR, metadata filters & 100\% Hit@3\\
+Reranking & Offline content judge & 4.35/5 BGE\\
+Agents & Scenario-based tests & Red flags + follow-ups\\
+Web evidence & Privacy, source quality, JSON & 100\% pass\\
+Application & Roles, reports, feedback & Doctor-only diagnosis\\
 \bottomrule
 \end{tabular}
 }
 
 \vspace{2mm}
-\textbf{Next phase.} Backend API, authenticated web frontend, audit logging, larger clinician-reviewed validation, Arabic support, and EMR integration after privacy approval.
+{\SmallFont\color{muted}
+\textbf{Why this matters:} Evaluation follows the full pipeline from corpus quality to application behavior, not only the final diagnosis output.
 }
+}{accentteal}
+
+\panel{810}{100}{350}{120}{Representative Clinical Workflows}{%
+{\SmallFont
+\begin{tabular}{p{0.23\linewidth}p{0.67\linewidth}}
+\toprule
+\textbf{Case} & \textbf{Doctor-facing output}\\
+\midrule
+Mode A: chest pain + hemoptysis & Primary provisional diagnosis: \textbf{Pulmonary Embolism}; differentials: ACS, Aortic Dissection, Pericarditis; tests: CTPA, D-dimer, ECG, troponin, chest X-ray.\\
+Mode B: painful leg nodules + fever & Refined uncommon presentation to \textbf{Erythema Nodosum}; suggested workup: ASO/strep, chest X-ray, TB test, ESR/CRP, medication review.\\
+Doctor review & Physician confirms, rejects, or corrects the report; feedback becomes future supervised training data.\\
+\bottomrule
+\end{tabular}}
+
+\vspace{2mm}
+{\TinyFont\color{muted}\textit{Representative functional tests, not clinical validation.}}
+}{navy}
 
 % ---------------------------------------------------------------------------
 % Bottom conclusion band
 % ---------------------------------------------------------------------------
-\draw[rounded corners=4mm, fill=navy, draw=navy] (25,20) rectangle (1164,60);
-\node[anchor=west, text=white, align=left] at (42,40) {%
-  \begin{minipage}{1075mm}
-  \BodyFont
-  \textbf{Conclusion.} Medora demonstrates a complete research prototype for structured clinical intake, textbook-grounded triage, privacy-safe current evidence review, patient memory, physician feedback, benchmarking, and hospital-server deployment preparation. It is a doctor-support system, not an autonomous diagnosis product.
+\fill[navy] (0,0) rectangle (1189,82);
+\node[anchor=west, align=left, text=white] at (35,42) {%
+  \begin{minipage}{250mm}
+  {\PanelTitleFont Conclusion}\vspace{1mm}\\
+  {\TinyFont\color{white!80}Main claim of the poster}
+  \end{minipage}
+};
+\node[anchor=west, align=left, text=white] at (300,42) {%
+  \begin{minipage}{840mm}
+  \BodyFont\RaggedRight
+  Medora demonstrates a complete engineering path from raw CMDT text to structured intake, evidence-grounded provisional triage, privacy-safe current evidence, doctor feedback, and full-stack clinical review. The system preserves the core safety boundary: \textbf{final diagnosis belongs to the clinician.} \textcolor{white!78}{Next: clinician-labeled validation, Arabic/multilingual intake, production security, and persistent distributed agent sessions.}
   \end{minipage}
 };
 
