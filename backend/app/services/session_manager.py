@@ -252,6 +252,7 @@ class AgentSessionManager:
                 state.phase = "triage_mode_b"
                 triage = _AgentTriageSession()
                 raw_complaint = state.intake.get_raw_complaint()
+                state.intake_summary["raw_complaint"] = raw_complaint
                 triage_response = await asyncio.to_thread(triage.start_uncommon, raw_complaint)
                 state.triage = triage
                 state.triage_started = True
@@ -315,7 +316,9 @@ class AgentSessionManager:
             result["message_type"] = "answer"
             result["triage_complete"] = True
             result["diagnosis"] = state.triage.get_diagnosis()
-            result["intake_summary"] = state.intake_summary
+            enriched_summary = dict(state.intake_summary or {})
+            enriched_summary["triage_answers"] = state.triage.get_patient_answers()
+            result["intake_summary"] = enriched_summary
         else:
             result["response_text"] = response_text
             result["sender"] = "triage_agent"
@@ -335,7 +338,9 @@ class AgentSessionManager:
             result["message_type"] = "answer"
             result["triage_complete"] = True
             result["diagnosis"] = state.triage.get_diagnosis()
-            result["intake_summary"] = state.intake_summary
+            enriched_summary = dict(state.intake_summary or {})
+            enriched_summary["triage_answers"] = state.triage.get_patient_answers()
+            result["intake_summary"] = enriched_summary
         elif isinstance(triage_result, str):
             result["response_text"] = triage_result
             result["sender"] = "triage_agent"
@@ -351,7 +356,9 @@ class AgentSessionManager:
             result["message_type"] = "answer"
             result["triage_complete"] = True
             result["diagnosis"] = triage_result
-            result["intake_summary"] = state.intake_summary
+            enriched_summary = dict(state.intake_summary or {})
+            enriched_summary["triage_answers"] = state.triage.get_patient_answers()
+            result["intake_summary"] = enriched_summary
         return result
 
     # ------------------------------------------------------------------

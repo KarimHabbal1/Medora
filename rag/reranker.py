@@ -200,9 +200,11 @@ MANUAL_QUERIES: list[dict] = [
 # ── Device detection ──────────────────────────────────────────────────────────
 
 def detect_device() -> str:
-    """Return 'mps' if Apple Silicon GPU is available, else 'cpu'."""
+    """Return the best available device: 'cuda', 'mps', or 'cpu'."""
     try:
         import torch
+        if torch.cuda.is_available():
+            return "cuda"
         if torch.backends.mps.is_available():
             return "mps"
     except ImportError:

@@ -292,6 +292,20 @@ npm run dev  # → http://localhost:5173
 
 ---
 
+## Production Deployment
+
+The full application is deployed on the existing EC2 g5.2xlarge instance:
+
+- **nginx** serves the React frontend build and proxies `/api/*` to the FastAPI backend
+- **uvicorn** runs the backend on port 8000 (localhost only)
+- **PostgreSQL** stores users, sessions, reports, and feedback
+- **SearXNG** runs in Docker on port 8080 for web evidence search
+- **CUDA** — the bi-encoder runs on the A10G GPU for fast retrieval
+
+See `docs/deployment_guide.md` for full setup instructions.
+
+---
+
 ## Limitations
 
 ### No True Token Streaming

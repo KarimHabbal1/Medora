@@ -81,6 +81,7 @@ export interface ClinicalReport {
   diagnosis_mode: string | null;
   diagnosis_pass_count: number | null;
   chunks_used_count: number | null;
+  web_search_results: unknown;
   generated_at: string;
 }
 
